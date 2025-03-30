@@ -116,11 +116,6 @@ export const parsePropItemFile = (content: string): PropItemMapping => {
           // Stelle sicher, dass die ID im korrekten Format ist
           const formattedId = `IDS_PROPITEM_TXT_${idNumber.toString().padStart(6, '0')}`;
           
-          // Debug-Ausgabe für wichtige Bereiche
-          if (idNumber >= 7342 && idNumber <= 11634) {
-            console.log(`Found mapping in critical range: ${formattedId} -> "${value}" (original line: "${trimmedLine}")`);
-          }
-          
           // Speichere das Mapping
           mappings[formattedId] = {
             name: formattedId,

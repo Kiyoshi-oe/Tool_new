@@ -99,40 +99,6 @@ export const getFilteredItems = (fileData: any, currentTab: string, settings: an
     }];
   }
   
-  // Zähle, wie viele Items einen gültigen dwItemKind1-Wert haben
-  const itemsWithType = fileData.items.filter(item => item && item.data && item.data.dwItemKind1);
-  console.log(`Items mit Typinformation: ${itemsWithType.length} von ${totalItemCount}`);
-  
-  // Wenn keine Items mit Typ-Information vorhanden sind, weisen wir Standard-Typen zu
-  if (itemsWithType.length === 0 && totalItemCount > 0) {
-    console.warn("Keine Items mit Typ-Information gefunden, weise Standard-Typen zu");
-    
-    for (let i = 0; i < fileData.items.length; i++) {
-      const item = fileData.items[i];
-      if (!item) continue;
-      
-      if (!item.data) {
-        item.data = {};
-      }
-      
-      // Einen Standardtyp basierend auf ID oder Namen zuweisen
-      const id = String(item.id || '').toLowerCase();
-      const name = String(item.name || '').toLowerCase();
-      
-      if (id.includes('wea') || name.includes('sword') || name.includes('axe')) {
-        item.data.dwItemKind1 = "IK1_WEAPON";
-      } else if (id.includes('arm') || name.includes('armor')) {
-        item.data.dwItemKind1 = "IK1_ARMOR";
-      } else if (id.includes('chr') || name.includes('costume')) {
-        item.data.dwItemKind1 = "IK1_PAPERDOLL";
-      } else {
-        // Verteilung auf verschiedene Typen für bessere Testbarkeit
-        const types = ["IK1_WEAPON", "IK1_ARMOR", "IK1_PAPERDOLL", "IK1_GENERAL"];
-        item.data.dwItemKind1 = types[i % types.length];
-      }
-    }
-  }
-  
   // Set Effect Tab spezialbehandeln
   if (currentTab === "Set Effect") {
     const filtered = fileData.items.filter((item: ResourceItem) => item && item.setEffects && item.setEffects.length > 0);
@@ -147,6 +113,7 @@ export const getFilteredItems = (fileData: any, currentTab: string, settings: an
   const isArmorTab = currentTab === "Armor";
   const isFashionTab = currentTab === "Fashion";
   const isOtherTab = currentTab === "Other Item";
+  const isAccessoryTab = currentTab === "Accessory";
   
   // Effizientere Filterung mit O(n) Zeitkomplexität
   filtered = fileData.items.filter((item: ResourceItem) => {
@@ -161,8 +128,14 @@ export const getFilteredItems = (fileData: any, currentTab: string, settings: an
     
     // Sicherere Stringkonvertierung
     const dwItemKind1 = String(item.data.dwItemKind1 || '');
+    const dwItemKind2 = String(item.data.dwItemKind2 || '');
     const id = String(item.id || '').toLowerCase();
     const name = String(item.name || '').toLowerCase();
+    
+    // Spezielle Behandlung für Accessory Tab - nur Jewelry Items anzeigen
+    if (isAccessoryTab) {
+      return dwItemKind2.includes('IK2_JEWELRY');
+    }
     
     // Optimierte Erkennung basierend auf der Tab-Kategorie
     if (isWeaponTab) {
@@ -201,6 +174,15 @@ export const getFilteredItems = (fileData: any, currentTab: string, settings: an
         displayName: "Keine Rüstungen gefunden",
         description: "Es wurden keine Rüstungen gefunden. Bitte Datei neu laden oder eine andere Kategorie wählen.",
         data: { dwItemKind1: "IK1_ARMOR", dwID: "0" },
+        effects: []
+      }];
+    } else if (isAccessoryTab) {
+      return [{
+        id: "default_accessory",
+        name: "Standard Accessory",
+        displayName: "Keine Schmuckstücke gefunden",
+        description: "Es wurden keine Schmuckstücke gefunden. Bitte Datei neu laden oder eine andere Kategorie wählen.",
+        data: { dwItemKind1: "IK1_ACCESSORY", dwItemKind2: "IK2_JEWELRY", dwID: "0" },
         effects: []
       }];
     } else if (isOtherTab) {

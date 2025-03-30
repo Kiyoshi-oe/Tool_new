@@ -288,115 +288,159 @@ export const useFileLoader = (
       // Begin der Fortschrittsanzeige
       setLoadProgress(10);
       
-      // Performance-Optimierung: Threads blockieren nicht die UI
-      // Verzögere die Verarbeitung für 100ms, damit die UI aktualisiert werden kann
+      // Verarbeitung in kleinere Schritte unterteilen, um die UI-Blockierung zu vermeiden
+      // Schritt 1: Parsing vorbereiten
       setTimeout(() => {
         try {
-          setLoadProgress(30);
+          setLoadProgress(20);
           
-          // Hauptdaten verarbeiten
-          const parsedData = parseTextFile(content);
-          setLoadProgress(70);
-          
-          // Überprüfe, ob das Ergebnis der Datei-Analyse ein FileData-Objekt oder 
-          // ein einfaches Header-Data-Objekt ist
-          let data: FileData;
-          
-          if ('items' in parsedData) {
-            // Es ist bereits ein FileData-Objekt
-            data = parsedData as FileData;
-            console.log("File data loaded:", data.items?.length || 0, "items");
-          } else {
-            // Es ist ein Header-Data-Objekt, konvertiere es zu FileData
-            const { headers, data: rowData } = parsedData as { headers: string[], data: Record<string, string>[] };
-            
-            // Stelle sicher, dass mindestens ein Header existiert
-            const safeHeaders = headers.length > 0 ? headers : ['Column1'];
-            
-            // Konvertiere das Format zu FileData mit sicheren Fallbacks
-            data = {
-              header: safeHeaders,
-              items: rowData.map((row, index) => {
-                // Sichere Default-Werte für wichtige Eigenschaften
-                const firstColumn = safeHeaders[0];
-                const itemName = row[firstColumn] || `Item_${index}`;
-                
-                const item: ResourceItem = {
-                  id: `item_${index}`,
-                  name: itemName,
-                  displayName: itemName,
-                  description: '',
-                  data: row,
-                  effects: []
-                };
-                return item;
-              })
-            };
-            
-            // Falls keine Items erstellt wurden, füge ein Dummy-Item hinzu
-            if (data.items.length === 0 && rowData.length > 0) {
-              console.warn("No items were created from data, adding a fallback item");
-              data.items = [
-                {
-                  id: "fallback_1",
-                  name: "Data Entry 1",
-                  displayName: "Data Entry 1",
-                  description: "Automatically created entry",
-                  data: rowData[0] || {},
-                  effects: []
-                }
-              ];
-            }
-          }
-          
-          setLoadProgress(80);
-          
-          // Verzögere den letzten Teil der Verarbeitung, um die UI zu aktualisieren
+          // Schritt 2: Tatsächliches Parsing in einem separaten Timer
           setTimeout(() => {
             try {
-              // Verarbeite die Items - sicher mit Nullchecks
-              if (data.items && data.items.length > 0) {
-                const propMappings = getGlobalPropItemMappings();
-                const mappingCount = Object.keys(propMappings).length;
-                console.log("Available mappings for items:", mappingCount);
-                
-                if (mappingCount > 0) {
-                  // Performance-Optimierung: Vermeide Array-Neuallokation bei großen Arrays
-                  const startTime = Date.now();
-                  const itemCount = data.items.length;
+              setLoadProgress(40);
+              // Hauptdaten verarbeiten mit Fortschrittsanzeige
+              console.log("Starting main data parsing...");
+              const parsedData = parseTextFile(content);
+              console.log("Parsing complete");
+              setLoadProgress(70);
+              
+              // Schritt 3: Nachbearbeitung und Anzeige
+              setTimeout(() => {
+                try {
+                  // Überprüfe, ob das Ergebnis der Datei-Analyse ein FileData-Objekt oder 
+                  // ein einfaches Header-Data-Objekt ist
+                  let data: FileData;
                   
-                  // Anwenden der Mappings auf Items
-                  for (let i = 0; i < itemCount; i++) {
-                    const item = data.items[i];
-                    const idPropItem = item.data?.szName as string;
+                  if (Array.isArray(parsedData)) {
+                    // Wenn wir nur ein Array bekommen, erstelle ein neues FileData-Objekt
+                    data = {
+                      header: parsedData,
+                      items: []
+                    };
+                  } else if ('header' in parsedData && 'items' in parsedData) {
+                    // Es ist bereits ein FileData-Objekt
+                    data = parsedData as FileData;
+                  } else if ('headers' in parsedData && 'data' in parsedData) {
+                    // Es ist ein Header-Data-Objekt, konvertiere es zu FileData
+                    const { headers, data: rowData } = parsedData as { headers: string[], data: Record<string, string>[] };
                     
-                    if (idPropItem && propMappings[idPropItem]) {
-                      item.displayName = propMappings[idPropItem].displayName || idPropItem;
-                      item.description = propMappings[idPropItem].description || "";
-                    }
+                    // Konvertiere das Format zu FileData
+                    data = {
+                      header: headers,
+                      items: rowData.map((row, index) => {
+                        // Erstelle ein ResourceItem aus den Rohdaten
+                        const item: ResourceItem = {
+                          id: `item_${index}`,
+                          name: `Item_${index}`,
+                          displayName: `Item ${index}`,
+                          description: '',
+                          data: row,
+                          effects: []
+                        };
+                        return item;
+                      })
+                    };
+                  } else {
+                    // Fallback für unbekanntes Format
+                    console.warn("Unknown data format from parseTextFile, creating empty FileData");
+                    data = {
+                      header: [],
+                      items: []
+                    };
                   }
                   
-                  console.log(`Processed ${itemCount} items in ${Date.now() - startTime}ms`);
+                  // Anreicherung mit Daten aus propItem, falls verfügbar
+                  if (propItemContent) {
+                    // PropItem-Verarbeitung nicht blockierend durchführen
+                    setTimeout(() => {
+                      try {
+                        console.log("Applying propItem data to", data.items.length, "items");
+                        const propItemData = parsePropItemFile(propItemContent);
+                        const propItemMappings = getGlobalPropItemMappings();
+                        
+                        // Wenn PropItems verfügbar sind, füge sie zu den Items hinzu
+                        if (propItemData && Object.keys(propItemData).length > 0) {
+                          // Verarbeite die PropItem-Daten in Batches, um die UI nicht zu blockieren
+                          const batchSize = 100; // Anzahl der Items pro Batch
+                          const totalItems = data.items.length;
+                          let processedCount = 0;
+                          
+                          function processBatch(startIndex: number) {
+                            const endIndex = Math.min(startIndex + batchSize, totalItems);
+                            
+                            for (let i = startIndex; i < endIndex; i++) {
+                              const item = data.items[i];
+                              if (!item) continue;
+                              
+                              const propId = item.id;
+                              if (propId && propItemData[propId]) {
+                                // Füge PropItem-Daten zum Item hinzu
+                                item.displayName = propItemData[propId].displayName || item.name;
+                                item.description = propItemData[propId].description || "";
+                                
+                                // Speichere die Zuordnung global für andere Komponenten
+                                propItemMappings[propId] = {
+                                  displayName: item.displayName,
+                                  description: item.description
+                                };
+                              }
+                            }
+                            
+                            processedCount += (endIndex - startIndex);
+                            const progress = Math.min(70 + Math.floor((processedCount / totalItems) * 20), 90);
+                            setLoadProgress(progress);
+                            
+                            // Wenn noch weitere Items zu verarbeiten sind, starte den nächsten Batch
+                            if (endIndex < totalItems) {
+                              setTimeout(() => processBatch(endIndex), 0);
+                            } else {
+                              // Alle Items verarbeitet
+                              console.log("PropItem processing complete");
+                              setGlobalPropItemMappings(propItemMappings);
+                              
+                              // Jetzt abschließen
+                              finishProcessing(data, true);
+                            }
+                          }
+                          
+                          // Starte die Batch-Verarbeitung
+                          processBatch(0);
+                        } else {
+                          console.log("No propItem data available or parsing returned empty result");
+                          finishProcessing(data, false);
+                        }
+                      } catch (propError) {
+                        console.error("Error processing propItem data:", propError);
+                        finishProcessing(data, false);
+                      }
+                    }, 0);
+                  } else {
+                    // Ohne PropItem direkt abschließen
+                    console.log("No propItem content available, finishing processing");
+                    finishProcessing(data, false);
+                  }
+                } catch (phase3Error) {
+                  console.error("Error in phase 3 (applying data):", phase3Error);
+                  setLoadingStatus('error');
+                  toast.error("Fehler bei der Datenverarbeitung (Phase 3)");
                 }
-              }
-              
-              finishProcessing(data, propItemContent !== null);
-            } catch (error) {
-              console.error("Error in final processing stage:", error);
+              }, 10); // Kurze Verzögerung für die UI-Aktualisierung
+            } catch (phase2Error) {
+              console.error("Error in phase 2 (parsing):", phase2Error);
               setLoadingStatus('error');
-              toast.error("Fehler beim Verarbeiten der Datei");
+              toast.error("Fehler bei der Datenverarbeitung (Phase 2)");
             }
-          }, 100);
-        } catch (error) {
-          console.error("Error processing file content:", error);
+          }, 10); // Kurze Verzögerung für die UI-Aktualisierung
+        } catch (phase1Error) {
+          console.error("Error in phase 1 (preparation):", phase1Error);
           setLoadingStatus('error');
-          toast.error("Fehler beim Verarbeiten der Datei");
+          toast.error("Fehler bei der Datenverarbeitung (Phase 1)");
         }
-      }, 100);
+      }, 10); // Kurze Verzögerung für die UI-Aktualisierung
     } catch (error) {
-      console.error("Error in processLoadedContent:", error);
+      console.error("Error processing loaded content:", error);
       setLoadingStatus('error');
-      toast.error("Fehler beim Verarbeiten der Datei");
+      toast.error("Fehler bei der Datenverarbeitung");
     }
   };
 
@@ -412,7 +456,8 @@ export const useFileLoader = (
       setLoadingStatus('loading');
       setLoadProgress(0);
       
-      // Wichtig: Setze zuerst ein leeres FileData Objekt, damit die UI weiß, dass wir laden
+      // Wichtig: Setze sofort ein leeres FileData Objekt mit einem Ladeindikator,
+      // damit die Benutzeroberfläche während des Ladens nutzbar bleibt
       setFileData({
         header: [],
         items: [{
@@ -425,90 +470,111 @@ export const useFileLoader = (
         }]
       });
       
-      // Prüfe zunächst, ob wir einen Cache haben
-      let cachedData = null;
-      
-      // Berechne einen Hash des Inhalts, um zu prüfen, ob die Datei sich geändert hat
-      const contentHash = await computeSimpleHash(content);
-      const currentCachedHash = localStorage.getItem(`${CACHE_KEY_SPEC_ITEMS}_hash`);
-      
-      // Wenn der Hash übereinstimmt, versuche den Cache zu verwenden
-      if (contentHash === currentCachedHash) {
-        console.log('Content-Hash stimmt überein, versuche Cache zu verwenden');
-        cachedData = loadFromCache(CACHE_KEY_SPEC_ITEMS);
-      } else {
-        console.log('Content hat sich geändert oder wurde noch nie gecacht');
-        localStorage.setItem(`${CACHE_KEY_SPEC_ITEMS}_hash`, contentHash);
-      }
-      
-      if (cachedData) {
-        console.log('Verwende gecachte Daten statt neuem Parsing', cachedData);
-        setLoadProgress(50);
-        
-        // Aktualisiere den Zustand mit den Cache-Daten
-        setFullSpecItemContent(content);
-        setSpecItemFullyLoaded(true);
-        
-        // Wir verwenden den Cache für das Spec-Item, aber verarbeiten trotzdem propItemContent
-        if (propItemContent) {
-          setInitialPropItemContent(propItemContent);
-          parseAndLoadPropItem(propItemContent);
-        }
-        
-        // Verbesserte Fehlerprüfung für das gecachte Objekt
-        if (!cachedData.items || !Array.isArray(cachedData.items)) {
-          console.error("Ungültiges Cache-Objekt ohne Items-Array:", cachedData);
-          toast.error("Cache-Daten ungültig, verarbeite Datei neu");
+      // Den Prozess in einen nicht-blockierenden Kontext verlagern
+      setTimeout(async () => {
+        try {
+          // Prüfe zunächst, ob wir einen Cache haben
+          let cachedData = null;
           
-          // Setze den Status auf partial, damit die Verarbeitung neu gestartet wird
-          setLoadingStatus('partial');
-          processLoadedContent(content, propItemContent);
-          return;
-        }
-        
-        // Stelle sicher, dass jedes Item einen gültigen Typ hat (Nachbearbeitung)
-        if (cachedData.items && cachedData.items.length > 0) {
-          cachedData.items.forEach(item => {
-            if (!item.data) item.data = {};
-            if (!item.data.dwItemKind1) {
-              // Setzen eines Standardtyps basierend auf der ID oder dem Namen
-              const id = (item.id || '').toLowerCase();
-              const name = (item.name || '').toLowerCase();
-              
-              if (id.includes('wea') || name.includes('sword')) {
-                item.data.dwItemKind1 = "IK1_WEAPON";
-              } else if (id.includes('arm') || name.includes('armor')) {
-                item.data.dwItemKind1 = "IK1_ARMOR";
-              } else {
-                item.data.dwItemKind1 = "IK1_GENERAL";
-              }
+          // Berechne einen Hash des Inhalts, um zu prüfen, ob die Datei sich geändert hat
+          const contentHash = await computeSimpleHash(content);
+          const currentCachedHash = localStorage.getItem(`${CACHE_KEY_SPEC_ITEMS}_hash`);
+          
+          // Wenn der Hash übereinstimmt, versuche den Cache zu verwenden
+          if (contentHash === currentCachedHash) {
+            console.log('Content-Hash stimmt überein, versuche Cache zu verwenden');
+            cachedData = loadFromCache(CACHE_KEY_SPEC_ITEMS);
+          } else {
+            console.log('Content hat sich geändert oder wurde noch nie gecacht');
+            localStorage.setItem(`${CACHE_KEY_SPEC_ITEMS}_hash`, contentHash);
+          }
+          
+          if (cachedData) {
+            console.log('Verwende gecachte Daten statt neuem Parsing', cachedData);
+            setLoadProgress(50);
+            
+            // Aktualisiere den Zustand mit den Cache-Daten
+            setFullSpecItemContent(content);
+            setSpecItemFullyLoaded(true);
+            
+            // Wir verwenden den Cache für das Spec-Item, aber verarbeiten trotzdem propItemContent
+            if (propItemContent) {
+              setInitialPropItemContent(propItemContent);
+              // PropItem-Verarbeitung in einen separaten asynchronen Kontext verschieben
+              setTimeout(() => {
+                parseAndLoadPropItem(propItemContent);
+              }, 10);
             }
-          });
+            
+            // Verbesserte Fehlerprüfung für das gecachte Objekt
+            if (!cachedData.items || !Array.isArray(cachedData.items)) {
+              console.error("Ungültiges Cache-Objekt ohne Items-Array:", cachedData);
+              toast.error("Cache-Daten ungültig, verarbeite Datei neu");
+              
+              // Setze den Status auf partial, damit die Verarbeitung neu gestartet wird
+              setLoadingStatus('partial');
+              // Nicht-blockierender Aufruf der Inhaltsverarbeitung
+              setTimeout(() => {
+                processLoadedContent(content, propItemContent);
+              }, 10);
+              return;
+            }
+            
+            // Stelle sicher, dass jedes Item einen gültigen Typ hat (Nachbearbeitung)
+            if (cachedData.items && cachedData.items.length > 0) {
+              cachedData.items.forEach(item => {
+                if (!item.data) item.data = {};
+                if (!item.data.dwItemKind1) {
+                  // Setzen eines Standardtyps basierend auf der ID oder dem Namen
+                  const id = (item.id || '').toLowerCase();
+                  const name = (item.name || '').toLowerCase();
+                  
+                  if (id.includes('wea') || name.includes('sword')) {
+                    item.data.dwItemKind1 = "IK1_WEAPON";
+                  } else if (id.includes('arm') || name.includes('armor')) {
+                    item.data.dwItemKind1 = "IK1_ARMOR";
+                  } else {
+                    item.data.dwItemKind1 = "IK1_GENERAL";
+                  }
+                }
+              });
+            }
+            
+            // Direkt die Daten setzen und dann den Status ändern
+            setFileData(cachedData);
+            setLoadingStatus('complete');
+            setLoadProgress(100);
+            
+            console.log("Cache-Daten geladen und angezeigt:", cachedData.items?.length || 0, "Items");
+            
+            // Load additional files after loading the main file in a separate, non-blocking context
+            setTimeout(() => {
+              loadAdditionalFiles();
+            }, 100);
+          } else {
+            // Keine Cache-Daten vorhanden, verarbeite normal
+            console.log('Keine Cache-Daten verfügbar, verarbeite Datei normal');
+            setFullSpecItemContent(content);
+            setSpecItemFullyLoaded(true);
+            
+            if (propItemContent) {
+              setInitialPropItemContent(propItemContent);
+              
+              // PropItem-Verarbeitung in einen separaten asynchronen Kontext verschieben
+              setTimeout(() => {
+                parseAndLoadPropItem(propItemContent);
+              }, 10);
+            }
+            
+            // Setze den Status auf partial, damit die Verarbeitung gestartet wird
+            setLoadingStatus('partial');
+          }
+        } catch (innerError) {
+          console.error("Error in async file loading process:", innerError);
+          setLoadingStatus('error');
+          toast.error("Fehler beim Laden der Datei: " + (innerError instanceof Error ? innerError.message : String(innerError)));
         }
-        
-        // Direkt die Daten setzen und dann den Status ändern
-        setFileData(cachedData);
-        setLoadingStatus('complete');
-        setLoadProgress(100);
-        
-        console.log("Cache-Daten geladen und angezeigt:", cachedData.items?.length || 0, "Items");
-        
-        // Load additional files after loading the main file
-        loadAdditionalFiles();
-      } else {
-        // Keine Cache-Daten vorhanden, verarbeite normal
-        console.log('Keine Cache-Daten verfügbar, verarbeite Datei normal');
-        setFullSpecItemContent(content);
-        setSpecItemFullyLoaded(true);
-        
-        if (propItemContent) {
-          setInitialPropItemContent(propItemContent);
-          parseAndLoadPropItem(propItemContent);
-        }
-        
-        // Setze den Status auf partial, damit die Verarbeitung gestartet wird
-        setLoadingStatus('partial');
-      }
+      }, 0); // Sofortige Ausführung im nächsten Event-Loop-Zyklus
     } catch (error) {
       console.error("Error in handleLoadFile:", error);
       setLoadingStatus('error');
@@ -524,19 +590,22 @@ export const useFileLoader = (
                  "propItemFullyLoaded:", propItemFullyLoaded, 
                  "initialPropItemContent:", !!initialPropItemContent);
                  
-      if (fullSpecItemContent) {
-        // Wenn specItem vollständig geladen ist, verarbeiten wir es, unabhängig von propItem
-        if (specItemFullyLoaded) {
-          console.log("Spec item fully loaded - processing content");
-          
-          // Wir verarbeiten die Daten mit dem vorhandenen propItem-Inhalt, 
-          // auch wenn dieser noch nicht vollständig geladen ist
-          processLoadedContent(fullSpecItemContent, 
+      // Verwende requestAnimationFrame, um die UI-Updates besser zu synchronisieren
+      requestAnimationFrame(() => {
+        if (fullSpecItemContent) {
+          // Wenn specItem vollständig geladen ist, verarbeiten wir es, unabhängig von propItem
+          if (specItemFullyLoaded) {
+            console.log("Spec item fully loaded - processing content");
+            
+            // Wir verarbeiten die Daten mit dem vorhandenen propItem-Inhalt, 
+            // auch wenn dieser noch nicht vollständig geladen ist
+            processLoadedContent(fullSpecItemContent, 
                              propItemFullyLoaded ? fullPropItemContent : null);
+          }
+        } else {
+          console.log("No fullSpecItemContent available yet");
         }
-      } else {
-        console.log("No fullSpecItemContent available yet");
-      }
+      });
     }
   }, [
     fullSpecItemContent, 
@@ -586,7 +655,7 @@ export const useFileLoader = (
             displayName: "Default Item",
             description: "A standard item",
             data: { dwItemKind1: "IK1_GENERAL", dwID: "default_4" },
-            effects: []
+          effects: []
           }
         ]
       };

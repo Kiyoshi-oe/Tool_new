@@ -27,11 +27,6 @@ const D3DFMT_R5G6B5 = 0x17;
 const D3DFMT_A8R8G8B8 = 0x21;
 const D3DFMT_X8R8G8B8 = 0x22;
 
-// FlyFF spezifische Formate
-const FLYFF_FORMAT_A1R5G5B5 = 'A1R5G5B5';
-const FLYFF_FORMAT_A1B5G5R5 = 'A1B5G5R5';
-const FLYFF_FORMAT_B4G4R4A4 = 'B4G4R4A4';
-
 // DDS-Header-Struktur
 interface DDSHeader {
   magic: number;          // 'DDS '
@@ -70,12 +65,6 @@ let width: number;
 let height: number;
 let format: string;
 
-// Magenta-Prüfung (FF00FF) mit Toleranz
-function isMagentaPixel(r: number, g: number, b: number, tolerance: number = 50): boolean {
-  // Erhöhte Toleranz für bessere Erkennung
-  return r > (255 - tolerance) && g < tolerance && b > (255 - tolerance);
-}
-
 // Lese den DDS-Header und interpretiere die Daten
 function parseDDSHeader(arrayBuffer: ArrayBuffer): DDSHeader | null {
   if (arrayBuffer.byteLength < 128) {
@@ -89,22 +78,17 @@ function parseDDSHeader(arrayBuffer: ArrayBuffer): DDSHeader | null {
   const magic = dv.getUint32(0, true);
   if (magic !== DDS_MAGIC) {
     console.error('Invalid DDS file, wrong magic number:', magic.toString(16));
+    // Versuch trotzdem den Header zu erstellen mit einem einfachen Fallback
+    console.warn('Attempting to create fallback header for DDS file');
     
-    // Versuch trotzdem einen gültigen Header zu erstellen als Fallback
-    // für Dateien, die falsch formatiert sind aber trotzdem Bilddaten enthalten
     try {
-      console.log('Attempting fallback conversion with incorrect header');
-      
-      const estimatedWidth = 32; // Typische Icon-Größe
-      const estimatedHeight = 32; // Typische Icon-Größe
-      
-      // Erstelle einen minimalen Header für Fallback-Versuche
-      return {
-        magic: DDS_MAGIC, // Korrigiere die Magic Number
-        size: 124,
+      // Versuch, trotzdem die Header-Daten zu lesen (könnte fehlerhaft sein)
+      const fallbackHeader: DDSHeader = {
+        magic: DDS_MAGIC, // Wir setzen die korrekte magische Zahl
+        size: 124, // Standard-Größe
         flags: DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT,
-        height: estimatedHeight,
-        width: estimatedWidth,
+        height: dv.getUint32(12, true) || 64, // Versuche Höhe zu lesen oder setze 64
+        width: dv.getUint32(16, true) || 64,  // Versuche Breite zu lesen oder setze 64
         pitchOrLinearSize: 0,
         depth: 1,
         mipMapCount: 1,
@@ -125,6 +109,9 @@ function parseDDSHeader(arrayBuffer: ArrayBuffer): DDSHeader | null {
         caps4: 0,
         reserved2: 0,
       };
+      
+      console.log('Created fallback header:', fallbackHeader);
+      return fallbackHeader;
     } catch (error) {
       console.error('Failed to create fallback header:', error);
       return null;
@@ -214,7 +201,7 @@ function identifyPixelFormat(header: DDSHeader): string {
         pixelFormat.bBitMask === 0x001F &&
         hasAlpha && pixelFormat.aBitMask === 0x8000
       ) {
-        return FLYFF_FORMAT_A1R5G5B5;
+        return 'A1R5G5B5';
       }
       
       if (
@@ -223,7 +210,7 @@ function identifyPixelFormat(header: DDSHeader): string {
         pixelFormat.bBitMask === 0x7C00 &&
         hasAlpha && pixelFormat.aBitMask === 0x8000
       ) {
-        return FLYFF_FORMAT_A1B5G5R5;
+        return 'A1B5G5R5';
       }
       
       if (
@@ -247,7 +234,7 @@ function identifyPixelFormat(header: DDSHeader): string {
       // FlyFF spezifische Formate basierend auf Erfahrungswerten
       if (pixelFormat.rgbBitCount === 16) {
         // Wenn Bitmasken nicht exakt übereinstimmen, verwenden wir die häufigsten Formate
-        return FLYFF_FORMAT_A1R5G5B5; // Standard FlyFF Format
+        return 'A1R5G5B5'; // Standard FlyFF Format
       }
 
     }
@@ -285,102 +272,6 @@ function identifyPixelFormat(header: DDSHeader): string {
   return 'UNKNOWN';
 }
 
-// Neue Funktion zur Erkennung und Konvertierung nicht-standardmäßiger Formate
-function tryAlternativeFormats(url: string, arrayBuffer: ArrayBuffer): HTMLCanvasElement {
-  // Überprüfe, ob die Datei möglicherweise eine reine Bilddatei ist
-  console.log('Trying alternative format conversion for invalid DDS file:', url);
-  
-  // Verschiedene Strategien versuchen
-  try {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      throw new Error('Failed to create canvas context');
-    }
-    
-    // Größe für ein typisches Icon setzen
-    canvas.width = 64;
-    canvas.height = 64;
-    
-    // Versuche den Buffer als 16-bit A1R5G5B5 zu interpretieren
-    let imageData;
-    
-    try {
-      // Nehme an, dass die Daten nach irgendwelchem Header beginnen (32 Bytes als Annahme)
-      const offset = Math.min(32, arrayBuffer.byteLength - 1024); // Mindestens 1kB Daten benötigt
-      const data = new Uint16Array(arrayBuffer, offset);
-      const pixelCount = Math.min(data.length, 64 * 64);
-      
-      imageData = ctx.createImageData(64, 64);
-      const pixels = imageData.data;
-      
-      // Teste beide möglichen R5G5B5-Formate
-      let transparentPixels = {normal: 0, swapped: 0};
-      
-      // Analysiere eine Stichprobe, um das wahrscheinlichste Format zu erkennen
-      const testSize = Math.min(pixelCount, 1000);
-      
-      for (let i = 0; i < testSize; i++) {
-        const pixelValue = data[i];
-        
-        // Teste A1R5G5B5 Format
-        const r1 = ((pixelValue & 0x7C00) >> 10) * 8; 
-        const g1 = ((pixelValue & 0x03E0) >> 5) * 8;
-        const b1 = (pixelValue & 0x001F) * 8;
-        
-        // Teste A1B5G5R5 Format
-        const b2 = ((pixelValue & 0x7C00) >> 10) * 8;
-        const g2 = ((pixelValue & 0x03E0) >> 5) * 8;
-        const r2 = (pixelValue & 0x001F) * 8;
-        
-        // Prüfe auf Magenta-ähnliche Farben
-        if (isMagentaPixel(r1, g1, b1)) transparentPixels.normal++;
-        if (isMagentaPixel(r2, g2, b2)) transparentPixels.swapped++;
-      }
-      
-      // Wähle das Format mit weniger Magenta-Pixeln
-      const useSwapped = transparentPixels.swapped < transparentPixels.normal;
-      
-      // Konvertiere die tatsächlichen Daten
-      for (let i = 0, j = 0; i < pixelCount; i++, j += 4) {
-        const pixelValue = data[i];
-        const alpha = ((pixelValue & 0x8000) >> 15) * 255;
-        
-        let red, green, blue;
-        
-        if (useSwapped) {
-          // A1B5G5R5 Format - Blue und Red vertauscht
-          blue = ((pixelValue & 0x7C00) >> 10) * 8; 
-          green = ((pixelValue & 0x03E0) >> 5) * 8;
-          red = (pixelValue & 0x001F) * 8;
-        } else {
-          // Standard A1R5G5B5 Format
-          red = ((pixelValue & 0x7C00) >> 10) * 8;
-          green = ((pixelValue & 0x03E0) >> 5) * 8;
-          blue = (pixelValue & 0x001F) * 8;
-        }
-        
-        // Prüfe auf Magenta für Transparenz
-        const isMagenta = isMagentaPixel(red, green, blue);
-        
-        pixels[j] = red;
-        pixels[j + 1] = green;
-        pixels[j + 2] = blue;
-        pixels[j + 3] = isMagenta ? 0 : alpha;
-      }
-      
-      ctx.putImageData(imageData, 0, 0);
-      return canvas;
-    } catch (error) {
-      console.error('Error during alternative format conversion:', error);
-      return createErrorCanvas(64, 64, 'Format Error');
-    }
-  } catch (error) {
-    console.error('Failed all alternative format attempts:', error);
-    return createErrorCanvas(64, 64, 'Invalid DDS');
-  }
-}
-
 // Lade die Textur und interpretiere die Daten
 export async function loadDDSFile(url: string): Promise<{
   width: number;
@@ -396,7 +287,9 @@ export async function loadDDSFile(url: string): Promise<{
     try {
       response = await fetch(url, { 
         // Cache-Control hinzufügen, um Caching-Probleme zu vermeiden
-        headers: { 'Cache-Control': 'no-cache' }
+        headers: { 'Cache-Control': 'no-cache' },
+        // Timeout hinzufügen
+        signal: AbortSignal.timeout(10000) // 10 Sekunden Timeout
       });
     } catch (fetchError) {
       console.error('Network error while fetching DDS:', fetchError);
@@ -415,37 +308,94 @@ export async function loadDDSFile(url: string): Promise<{
       throw new Error(`Fehler beim Lesen der DDS-Daten: ${bufferError instanceof Error ? bufferError.message : 'Unbekannter Fehler'}`);
     }
     
-    // Versuche den Header zu interpretieren
+    // Vorprüfung des DDS-Formats
+    if (!isValidDDSFile(arrayBuffer)) {
+      // Extrahiere den Dateinamen aus der URL für verbesserte Fehlermeldungen
+      const fileName = url.split('/').pop() || '';
+      
+      // Versuche trotzdem, mit einem Fallback weiterzuarbeiten
+      console.warn(`Datei ${fileName} ist keine gültige DDS-Datei, versuche Fallback...`);
+      
+      // Das ist kein echtes DDS, wir erstellen daher einen leeren ArrayBuffer
+      // der groß genug ist für typische Icon-Daten (64x64 mit 16-bit Pixeln)
+      const newBuffer = new ArrayBuffer(128 + 64*64*2); // Header + Pixeldaten
+      
+      // Kopiere so viele Daten wie möglich aus dem ursprünglichen Buffer
+      // und sorge dafür, dass wir zumindest einen Header-ähnlichen Bereich haben
+      const newBufferView = new Uint8Array(newBuffer);
+      const originalView = new Uint8Array(arrayBuffer);
+      for (let i = 0; i < Math.min(originalView.length, newBufferView.length); i++) {
+        newBufferView[i] = originalView[i];
+      }
+      
+      // Manuell das Magic-Wort setzen (erstes 4 Bytes)
+      const headerView = new DataView(newBuffer);
+      headerView.setUint32(0, DDS_MAGIC, true);
+      
+      // Verwende diesen modifizierten Buffer
+      arrayBuffer = newBuffer;
+    }
+    
     const header = parseDDSHeader(arrayBuffer);
     
     if (!header) {
-      // Bei ungültigem Header versuchen wir alternative Formate
-      const alternativeCanvas = tryAlternativeFormats(url, arrayBuffer);
+      // Stattdessen einen Fallback für fehlerhafte Dateien mit gutem Datennamen verwenden
+      console.warn('Could not parse DDS header, attempting fallback for:', url);
       
-      // Erstelle ein ImageData-Objekt aus dem Canvas
-      const ctx = alternativeCanvas.getContext('2d');
-      if (!ctx) {
-        throw new Error('Failed to get 2D context');
+      // Extrahiere den Dateinamen aus der URL
+      const fileName = url.split('/').pop() || '';
+      
+      // Wenn der Dateiname ein bekanntes Icon-Format ist, versuche Standard-Parameter
+      if (fileName.startsWith('itm_') || fileName.includes('Foot') || fileName.includes('Wea')) {
+        console.log('Creating fallback DDS data for known icon type:', fileName);
+        
+        // Erstelle einen validen Speicherbereich für Uint16Array
+        let dataArray;
+        try {
+          // Versuche zuerst, die Daten ab Offset 128 zu lesen
+          dataArray = new Uint16Array(arrayBuffer, 128);
+        } catch (e) {
+          console.warn('Error creating Uint16Array at offset 128:', e);
+          
+          // Bei Fehlern mit ungültiger Byte-Länge, erstelle eine neue Kopie
+          // des Speicherbereichs mit korrigierter Länge (muss ein Vielfaches von 2 sein)
+          const dataView = new Uint8Array(arrayBuffer, 128);
+          // Stelle sicher, dass die Länge ein Vielfaches von 2 ist
+          const validLength = Math.floor(dataView.length / 2) * 2;
+          const validBuffer = new ArrayBuffer(validLength);
+          const validView = new Uint8Array(validBuffer);
+          
+          // Kopiere gültige Daten
+          for (let i = 0; i < validLength; i++) {
+            if (i < dataView.length) {
+              validView[i] = dataView[i];
+            } else {
+              validView[i] = 0;
+            }
+          }
+          
+          // Erstelle ein Uint16Array aus dem korrigierten Buffer
+          dataArray = new Uint16Array(validBuffer);
+        }
+        
+        // Fallback - Wir versuchen mit typischen FlyFF-Werten zu arbeiten
+        return {
+          width: 64,
+          height: 64,
+          format: 'A1R5G5B5',
+          data: dataArray
+        };
       }
       
-      const imageData = ctx.getImageData(0, 0, alternativeCanvas.width, alternativeCanvas.height);
-      const tempArray = new Uint16Array(alternativeCanvas.width * alternativeCanvas.height);
-      
-      // Wir müssen einen Daten-Buffer zurückgeben, der mit dem erwarteten Format kompatibel ist
-      return {
-        width: alternativeCanvas.width,
-        height: alternativeCanvas.height,
-        format: 'ALTERNATIVE',
-        data: tempArray
-      };
+      throw new Error('DDS-Header konnte nicht interpretiert werden');
     }
     
-    const width = header.width;
-    const height = header.height;
-    const format = identifyPixelFormat(header);
+    width = header.width;
+    height = header.height;
+    format = identifyPixelFormat(header);
     
     // Hole die Rohdaten der Textur
-    const dataOffset = 128; // Standard-DDS-Header ist 128 Bytes
+    dataOffset = 128; // Standard-DDS-Header ist 128 Bytes
     const dataSize = arrayBuffer.byteLength - dataOffset;
     
     if (dataSize <= 0) {
@@ -453,15 +403,60 @@ export async function loadDDSFile(url: string): Promise<{
     }
     
     // Sichere Erstellung von TypedArrays basierend auf dem Pixelformat
-    let textureData;
-    
-    if (format === FLYFF_FORMAT_A1R5G5B5 || format === FLYFF_FORMAT_A1B5G5R5 || format.includes('RGB16')) {
-      textureData = new Uint16Array(arrayBuffer, dataOffset);
-    } else if (format === 'A8R8G8B8' || format === 'X8R8G8B8') {
-      textureData = new Uint32Array(arrayBuffer, dataOffset);
-    } else {
-      // Für andere Formate oder komprimierte Texturen
-      textureData = new Uint8Array(arrayBuffer, dataOffset);
+    // und stellt sicher, dass die Länge gültig ist (für Uint16Array und Uint32Array)
+    try {
+      if (format === 'A1R5G5B5' || format === 'A1B5G5R5' || format === 'R5G6B5' || format === 'A4R4G4B4') {
+        // Prüfe, ob die verbleibende Datenmenge ein Vielfaches von 2 ist
+        if (dataSize % 2 !== 0) {
+          console.warn('DDS data size is not a multiple of 2, adjusting...');
+          // Erstelle einen neuen Buffer mit korrekter Größe
+          const newSize = Math.floor(dataSize / 2) * 2;
+          const tempBuffer = new ArrayBuffer(newSize);
+          const srcView = new Uint8Array(arrayBuffer, dataOffset, Math.min(dataSize, newSize));
+          const destView = new Uint8Array(tempBuffer);
+          destView.set(srcView);
+          
+          textureData = new Uint16Array(tempBuffer);
+        } else {
+          textureData = new Uint16Array(arrayBuffer, dataOffset);
+        }
+      } else if (format === 'A8R8G8B8' || format === 'X8R8G8B8') {
+        // Prüfe, ob die verbleibende Datenmenge ein Vielfaches von 4 ist
+        if (dataSize % 4 !== 0) {
+          console.warn('DDS data size is not a multiple of 4, adjusting...');
+          // Erstelle einen neuen Buffer mit korrekter Größe
+          const newSize = Math.floor(dataSize / 4) * 4;
+          const tempBuffer = new ArrayBuffer(newSize);
+          const srcView = new Uint8Array(arrayBuffer, dataOffset, Math.min(dataSize, newSize));
+          const destView = new Uint8Array(tempBuffer);
+          destView.set(srcView);
+          
+          textureData = new Uint32Array(tempBuffer);
+        } else {
+          textureData = new Uint32Array(arrayBuffer, dataOffset);
+        }
+      } else {
+        // Für andere Formate oder komprimierte Texturen
+        textureData = new Uint8Array(arrayBuffer, dataOffset);
+      }
+    } catch (dataError) {
+      console.error('Error creating texture data array:', dataError);
+      
+      // Fallback: Erstelle ein neues Array mit sicheren Abmessungen
+      const fallbackBuffer = new ArrayBuffer(width * height * 2);
+      textureData = new Uint16Array(fallbackBuffer);
+      
+      // Versuche, zumindest einige Daten zu kopieren, wenn möglich
+      try {
+        const originalData = new Uint8Array(arrayBuffer, dataOffset);
+        const fallbackData = new Uint8Array(fallbackBuffer);
+        const bytesToCopy = Math.min(originalData.length, fallbackData.length);
+        for (let i = 0; i < bytesToCopy; i++) {
+          fallbackData[i] = originalData[i];
+        }
+      } catch (e) {
+        console.warn('Failed to copy DDS data to fallback buffer:', e);
+      }
     }
     
     logImageOperation('DDS_LOADED_DIRECT', { 
@@ -539,8 +534,8 @@ export function createErrorCanvas(width: number, height: number, message: string
   return canvas;
 }
 
-// Verbessere Robustheit und Toleranz bei der Konvertierung
-function convertA1R5G5B5ToCanvas(
+// Konvertiere A1R5G5B5 16-bit Daten in ein Canvas (speziell für FlyFF)
+export function convertA1R5G5B5ToCanvas(
   data: Uint16Array, 
   width: number,
   height: number,
@@ -558,71 +553,49 @@ function convertA1R5G5B5ToCanvas(
   const imageData = ctx.createImageData(width, height);
   const rgba = imageData.data;
   
-  // Stelle sicher, dass wir nicht über die Grenzen hinausgehen
   const pixelCount = Math.min(data.length, width * height);
   
-  try {
-    for (let i = 0; i < pixelCount; i++) {
-      // Berechne die Position im RGBA Array (4 Bytes pro Pixel)
-      const rgbaIndex = i * 4;
-      
-      // Hole den 16-bit Pixelwert
-      const pixelValue = data[i];
-      
+  // Magenta-Farbe, die wir als transparent behandeln wollen (FF00FF)
+  const magentaR = 255;
+  const magentaG = 0;
+  const magentaB = 255;
+  
+  // Toleranzwert für die Magenta-Erkennung (erlaube kleine Abweichungen)
+  const colorTolerance = 20;
+  
+  for (let i = 0; i < pixelCount; i++) {
+    const pixelValue = data[i];
+    const rgbaIndex = i * 4;
+    
+    // A1R5G5B5 Format
+    let alpha = ((pixelValue & 0x8000) >> 15) * 255; // 1 bit alpha
+    let red, green, blue;
+    
+    if (swapRedBlue) {
+      // A1B5G5R5 Format
+      blue = ((pixelValue & 0x7C00) >> 10) * 8;  // Bits 10-14, zu 0-255 skaliert
+      green = ((pixelValue & 0x03E0) >> 5) * 8;  // Bits 5-9, zu 0-255 skaliert
+      red = (pixelValue & 0x001F) * 8;          // Bits 0-4, zu 0-255 skaliert
+    } else {
       // A1R5G5B5 Format
-      let alpha = ((pixelValue & 0x8000) >> 15) * 255; // Bit 15 ist Alpha (0 oder 1)
-      let red, green, blue;
-      
-      if (swapRedBlue) {
-        // A1B5G5R5 Format - vertauschte Rot/Blau Kanäle
-        blue = ((pixelValue & 0x7C00) >> 10) * 8;  // Bits 10-14
-        green = ((pixelValue & 0x03E0) >> 5) * 8;  // Bits 5-9
-        red = (pixelValue & 0x001F) * 8;           // Bits 0-4
-      } else {
-        // Standard A1R5G5B5 Format
-        red = ((pixelValue & 0x7C00) >> 10) * 8;   // Bits 10-14
-        green = ((pixelValue & 0x03E0) >> 5) * 8;  // Bits 5-9
-        blue = (pixelValue & 0x001F) * 8;          // Bits 0-4
-      }
-      
-      // Wichtig für FlyFF: 
-      // 1. Exaktes FF00FF als transparent behandeln
-      // 2. Magenta-ähnliche Farben mit Toleranz prüfen
-      
-      // Exaktes Magenta (oder sehr nah dran)
-      if (red >= 248 && green <= 8 && blue >= 248) {
-        alpha = 0; // Komplett transparent
-      }
-      // Magenta-ähnliche Farben 
-      else if (isMagentaPixel(red, green, blue)) {
-        alpha = 0; // Transparent setzen
-      }
-      
-      // Fülle die Bilddaten
-      rgba[rgbaIndex] = red;        // R
-      rgba[rgbaIndex + 1] = green;  // G
-      rgba[rgbaIndex + 2] = blue;   // B
-      rgba[rgbaIndex + 3] = alpha;  // A
+      red = ((pixelValue & 0x7C00) >> 10) * 8;   // Bits 10-14, zu 0-255 skaliert
+      green = ((pixelValue & 0x03E0) >> 5) * 8;  // Bits 5-9, zu 0-255 skaliert
+      blue = (pixelValue & 0x001F) * 8;          // Bits 0-4, zu 0-255 skaliert
     }
     
-    // Setze die übrigen Pixel auf transparent schwarz
-    for (let i = pixelCount * 4; i < rgba.length; i += 4) {
-      rgba[i] = 0;       // R
-      rgba[i + 1] = 0;   // G
-      rgba[i + 2] = 0;   // B
-      rgba[i + 3] = 0;   // A (transparent)
+    // Prüfe, ob der Pixel im Magenta-Bereich liegt (FF00FF oder ähnlich)
+    if (
+      Math.abs(red - magentaR) <= colorTolerance && 
+      green <= colorTolerance && 
+      Math.abs(blue - magentaB) <= colorTolerance
+    ) {
+      alpha = 0; // Transparenz setzen
     }
-  } catch (error) {
-    console.error('Error during pixel conversion:', error);
     
-    // Im Fehlerfall ein erkennbares Muster erstellen
-    for (let i = 0; i < rgba.length; i += 4) {
-      // Rot/Schwarz-Muster für Fehlererkennung
-      rgba[i] = (i % 8 === 0) ? 255 : 0;  // R
-      rgba[i + 1] = 0;                    // G
-      rgba[i + 2] = 0;                    // B
-      rgba[i + 3] = 255;                  // A (opak)
-    }
+    rgba[rgbaIndex] = red;
+    rgba[rgbaIndex + 1] = green;
+    rgba[rgbaIndex + 2] = blue;
+    rgba[rgbaIndex + 3] = alpha;
   }
   
   ctx.putImageData(imageData, 0, 0);
@@ -632,38 +605,33 @@ function convertA1R5G5B5ToCanvas(
 // Hauptfunktion zum Laden und Konvertieren
 export async function loadAndConvertDDS(url: string): Promise<HTMLCanvasElement> {
   try {
-    const result = await getBestDDSRepresentation(url);
-    return result.canvas;
+    const result = await loadDDSFile(url);
+    
+    if (!result.data || result.width === 0 || result.height === 0) {
+      return createErrorCanvas(64, 64, 'Failed to load DDS');
+    }
+    
+    if (result.format === 'A1R5G5B5' || result.format === 'A1B5G5R5') {
+      // Versuche mit beiden Formaten, falls eines nicht gut aussieht
+      try {
+        return convertA1R5G5B5ToCanvas(
+          result.data as Uint16Array, 
+          result.width, 
+          result.height,
+          result.format === 'A1B5G5R5'
+        );
+      } catch (error) {
+        console.error('Error converting DDS to canvas:', error);
+        return createErrorCanvas(result.width, result.height, 'Conversion Error');
+      }
+    }
+    
+    // Für andere Formate könnte man weitere Konvertierungen implementieren
+    return createErrorCanvas(result.width, result.height, `Unsupported format: ${result.format}`);
   } catch (error) {
     console.error('Failed to load and convert DDS:', error);
     return createErrorCanvas(64, 64, 'DDS Processing Error');
   }
-}
-
-// Analysiert ein Canvas-Bild um zu prüfen, ob zu viele Magenta-Pixel vorhanden sind
-function analyzeCanvasForMagenta(canvas: HTMLCanvasElement): boolean {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return false;
-  
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-  let magentaCount = 0;
-  let totalPixels = canvas.width * canvas.height;
-  
-  // Prüfe nur eine Stichprobe von Pixeln
-  const sampleSize = Math.min(totalPixels, 1000);
-  const sampleStep = Math.max(1, Math.floor(totalPixels / sampleSize));
-  
-  for (let i = 0; i < totalPixels; i += sampleStep) {
-    const index = i * 4;
-    // Prüfe auf Magenta (hoher Rot- und Blau-Wert, niedriger Grün-Wert)
-    if (data[index] > 200 && data[index + 1] < 50 && data[index + 2] > 200) {
-      magentaCount++;
-    }
-  }
-  
-  // Wenn mehr als 30% der Stichprobe magenta ist, sollten wir das Format wechseln
-  return (magentaCount / (totalPixels / sampleStep)) > 0.3;
 }
 
 // Eine Funktion, die versucht, die beste Darstellung für ein DDS-Format zu finden
@@ -698,116 +666,68 @@ export async function getBestDDSRepresentation(url: string, retryCount = 0): Pro
       return createFallbackDDSRepresentation("NO_DATA");
     }
     
-    // Für alternative Formate, die nicht standardmäßig interpretiert werden konnten
-    if (ddsData.format === 'ALTERNATIVE') {
-      // Die alternative Methode hat bereits ein fertiges Canvas erstellt
-      const alternativeCanvas = document.createElement('canvas');
-      alternativeCanvas.width = ddsData.width;
-      alternativeCanvas.height = ddsData.height;
-      
-      // Einfach ein leeres Canvas zurückgeben, die eigentliche Umwandlung
-      // erfolgte bereits in tryAlternativeFormats
-      const ctx = alternativeCanvas.getContext('2d');
-      if (ctx) {
-        // Ein leeres Canvas für Daten, die wir nicht interpretieren können
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, ddsData.width, ddsData.height);
-        
-        // Statustext
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '10px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('DDS: Alt Format', ddsData.width/2, ddsData.height/2);
-      }
-      
-      return {
-        canvas: alternativeCanvas,
-        format: 'ALTERNATIVE',
-        width: ddsData.width,
-        height: ddsData.height
-      };
-    }
+    // Erstelle Standardformat
+    let canvas = createErrorCanvas(ddsData.width, ddsData.height, 'Unsupported Format');
     
     // Versuche beide Formate für 16-bit Texturen
-    if (ddsData.format === FLYFF_FORMAT_A1R5G5B5 || ddsData.format === FLYFF_FORMAT_A1B5G5R5 || 
+    if (ddsData.format === 'A1R5G5B5' || ddsData.format === 'A1B5G5R5' || 
         ddsData.format.includes('RGB16') || ddsData.format === 'UNKNOWN') {
       
+      // Versuche verschiedene Formate
       try {
-        // Versuche alle vier möglichen Varianten
-        const formats = [false, true]; // [normal, swapped]
-        let bestCanvas = null;
-        let bestFormat = "";
-        let bestNonMagentaPixels = -1;
-        
-        // Teste beide Format-Varianten und wähle die mit den wenigsten Magenta-Pixeln
-        for (const swapped of formats) {
-          const canvas = convertA1R5G5B5ToCanvas(
-            ddsData.data as Uint16Array, 
-            ddsData.width, 
-            ddsData.height,
-            swapped
-          );
-          
-          // Analysiere, wie viele nicht-magenta/nicht-transparente Pixel wir haben
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            
-            // Zähle sichtbare Pixel (nicht transparent)
-            let visiblePixels = 0;
-            for (let i = 3; i < imgData.data.length; i += 4) {
-              if (imgData.data[i] > 0) {
-                visiblePixels++;
-              }
-            }
-            
-            // Wenn dies mehr sichtbare Pixel hat als die bisherige beste Option
-            if (visiblePixels > bestNonMagentaPixels) {
-              bestNonMagentaPixels = visiblePixels;
-              bestCanvas = canvas;
-              bestFormat = swapped ? FLYFF_FORMAT_A1B5G5R5 : FLYFF_FORMAT_A1R5G5B5;
-              
-              // Wenn wir genügend sichtbare Pixel haben, nehmen wir diese sofort
-              // Ein guter Schwellenwert könnte 20% der Gesamtpixel sein
-              const totalPixels = canvas.width * canvas.height;
-              if (visiblePixels > totalPixels * 0.2) {
-                break;
-              }
-            }
-          }
-        }
-        
-        // Wenn wir ein gutes Canvas gefunden haben
-        if (bestCanvas) {
-          return {
-            canvas: bestCanvas,
-            format: bestFormat,
-            width: ddsData.width,
-            height: ddsData.height
-          };
-        }
-        
-        // Fallback auf Standard-Format, wenn keine Analyse möglich war
-        const defaultCanvas = convertA1R5G5B5ToCanvas(
+        // Standard A1R5G5B5
+        const canvas1 = convertA1R5G5B5ToCanvas(
           ddsData.data as Uint16Array, 
           ddsData.width, 
           ddsData.height,
-          false // standardmäßig nicht vertauscht
+          false
         );
         
-        return {
-          canvas: defaultCanvas,
-          format: ddsData.format,
-          width: ddsData.width,
-          height: ddsData.height
-        };
+        // Vertauschtes A1B5G5R5
+        const canvas2 = convertA1R5G5B5ToCanvas(
+          ddsData.data as Uint16Array, 
+          ddsData.width, 
+          ddsData.height,
+          true
+        );
+        
+        // Wähle das Format, das am wahrscheinlichsten richtig ist
+        // Versuch zu erkennen, welches Canvas weniger Magenta-Pixel hat
+        
+        // Beide Canvas-Objekte analysieren
+        const imgData1 = canvas1.getContext('2d')?.getImageData(0, 0, canvas1.width, canvas1.height).data;
+        const imgData2 = canvas2.getContext('2d')?.getImageData(0, 0, canvas2.width, canvas2.height).data;
+        
+        if (imgData1 && imgData2) {
+          // Zähle die nicht-transparenten Pixel in beiden Versionen
+          let nonTransparentPixels1 = 0;
+          let nonTransparentPixels2 = 0;
+          
+          for (let i = 3; i < imgData1.length; i += 4) {
+            if (imgData1[i] > 0) nonTransparentPixels1++;
+            if (imgData2[i] > 0) nonTransparentPixels2++;
+          }
+          
+          // Wähle das Canvas mit mehr nicht-transparenten Pixeln
+          // da dieses wahrscheinlich weniger Magenta-Pixel hat
+          canvas = nonTransparentPixels1 >= nonTransparentPixels2 ? canvas1 : canvas2;
+          ddsData.format = nonTransparentPixels1 >= nonTransparentPixels2 ? 'A1R5G5B5' : 'A1B5G5R5';
+        } else {
+          // Wenn die Analyse nicht funktioniert, verwende Standard A1R5G5B5
+          canvas = canvas1;
+          ddsData.format = 'A1R5G5B5';
+        }
       } catch (error) {
         console.error('Error during format testing:', error);
       }
     }
     
-    // Fallback für unbekannte oder nicht unterstützte Formate
-    return createFallbackDDSRepresentation("UNSUPPORTED_FORMAT");
+    return {
+      canvas,
+      format: ddsData.format,
+      width: ddsData.width,
+      height: ddsData.height
+    };
   } catch (error) {
     console.error('Error getting best DDS representation:', error);
     return createFallbackDDSRepresentation("PROCESSING_ERROR");
@@ -841,9 +761,6 @@ function createFallbackDDSRepresentation(errorType: string): {
       case "PROCESSING_ERROR":
         ctx.fillStyle = '#555533'; // Gelblich für Verarbeitungsfehler
         break;
-      case "UNSUPPORTED_FORMAT":
-        ctx.fillStyle = '#333355'; // Bläulich für nicht unterstützte Formate
-        break;
       default:
         ctx.fillStyle = '#333333'; // Dunkelgrau für unbekannte Fehler
     }
@@ -857,8 +774,7 @@ function createFallbackDDSRepresentation(errorType: string): {
           // Dunklere Version der Hintergrundfarbe
           ctx.fillStyle = errorType === "LOAD_ERROR" ? '#442222' : 
                          errorType === "NO_DATA" ? '#224444' : 
-                         errorType === "PROCESSING_ERROR" ? '#444422' : 
-                         errorType === "UNSUPPORTED_FORMAT" ? '#222244' : '#222222';
+                         errorType === "PROCESSING_ERROR" ? '#444422' : '#222222';
           ctx.fillRect(x, y, squareSize, squareSize);
         }
       }
@@ -881,4 +797,5 @@ function createFallbackDDSRepresentation(errorType: string): {
     width,
     height
   };
+} 
 } 

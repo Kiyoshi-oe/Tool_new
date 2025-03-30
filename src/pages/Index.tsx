@@ -56,12 +56,14 @@ const Index = () => {
     handleUndo,
     handleRedo,
     handleLoadFile,
+    loadDefaultFiles,
     handleSelectItem,
     handleUpdateItem,
     handleCloseTab,
     handleSelectTab,
     handleToggleEditMode,
-    loadDefaultFiles
+    loadingStatus,
+    loadProgress
   } = useResourceState(settings, setLogEntries);
 
   useEffect(() => {
@@ -408,6 +410,8 @@ const Index = () => {
         <StatusBar 
           mode={editMode ? "Edit" : "View"} 
           itemCount={getFilteredItems(fileData, currentTab).length}
+          isLoading={loadingStatus === 'loading' || loadingStatus === 'partial'}
+          loadProgress={loadProgress}
         />
         
         {fileUploadConfig.isVisible && (

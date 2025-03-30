@@ -15,6 +15,7 @@ interface SidebarProps {
 // Konfiguration für Virtualisierung
 const ITEM_HEIGHT = 28; // Höhe eines Items in px
 const BUFFER_ITEMS = 10; // Pufferelemente über/unter dem sichtbaren Bereich
+const ITEMS_PER_PAGE = 200; // Maximale Anzahl der Items pro Seite
 
 // Globale Variable zum Speichern der Scrollposition außerhalb des React-Lifecycles
 let globalScrollPosition = 0;
@@ -23,6 +24,7 @@ let isInitialRender = true;
 
 const Sidebar = ({ items, onSelectItem, selectedItem, darkMode = true }: SidebarProps) => {
   const [searchQuery, setSearchQuery] = useState("");
+  const [displayedItemsCount, setDisplayedItemsCount] = useState(ITEMS_PER_PAGE);
   const viewportRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const isUserScrolling = useRef(false);
@@ -75,6 +77,11 @@ const Sidebar = ({ items, onSelectItem, selectedItem, darkMode = true }: Sidebar
     });
   }, [safeItems, searchQuery]);
   
+  // Begrenzte Items für die Anzeige
+  const displayedItems = useMemo(() => {
+    return filteredItems.slice(0, displayedItemsCount);
+  }, [filteredItems, displayedItemsCount]);
+  
   // Aktualisierte Debug-Ausgabe, wenn sich die filteredItems ändern
   useEffect(() => {
     console.log(`Gefilterte Items für Sidebar: ${filteredItems.length}`);
@@ -99,17 +106,17 @@ const Sidebar = ({ items, onSelectItem, selectedItem, darkMode = true }: Sidebar
       return { virtualItems: [], totalHeight: 0, startIndex: 0, endIndex: 0 };
     }
     
-    const totalHeight = filteredItems.length * ITEM_HEIGHT;
+    const totalHeight = displayedItems.length * ITEM_HEIGHT;
     
     // Berechne sichtbare Items basierend auf Viewport
     const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - BUFFER_ITEMS);
     const endIndex = Math.min(
-      filteredItems.length - 1,
+      displayedItems.length - 1,
       Math.ceil((scrollTop + clientHeight) / ITEM_HEIGHT) + BUFFER_ITEMS
     );
     
     // Erstelle virtuelle Items mit Position
-    const virtualItems = filteredItems
+    const virtualItems = displayedItems
       .slice(startIndex, endIndex + 1)
       .map((item, idx) => ({
         item,
@@ -118,7 +125,7 @@ const Sidebar = ({ items, onSelectItem, selectedItem, darkMode = true }: Sidebar
       }));
     
     return { virtualItems, totalHeight, startIndex, endIndex };
-  }, [filteredItems, scrollTop, clientHeight]);
+  }, [displayedItems, scrollTop, clientHeight]);
   
   // Beim ersten Laden den isInitialRender-Flag setzen
   useEffect(() => {
@@ -244,6 +251,14 @@ const Sidebar = ({ items, onSelectItem, selectedItem, darkMode = true }: Sidebar
     }
   }, [selectedItem?.id]);
   
+  // Funktion zum Laden weiterer Items
+  const handleLoadMore = () => {
+    setDisplayedItemsCount(prev => Math.min(prev + ITEMS_PER_PAGE, filteredItems.length));
+  };
+  
+  // Prüfen, ob eine Kategorie ausgewählt wurde (Items vorhanden sind)
+  const isCategorySelected = Array.isArray(items) && items.length > 0;
+  
   return (
     <div 
       className={`h-full w-64 border-r ${darkMode ? 'bg-cyrus-dark border-cyrus-dark-lighter' : 'bg-white border-gray-200'} flex flex-col`}
@@ -258,11 +273,11 @@ const Sidebar = ({ items, onSelectItem, selectedItem, darkMode = true }: Sidebar
             className={`pl-8 p-1.5 w-full text-sm rounded ${darkMode ? 'bg-cyrus-dark-light text-white' : 'bg-white text-black'} border ${darkMode ? 'border-cyrus-dark-lighter' : 'border-gray-300'}`}
             value={searchQuery}
             onChange={(e) => {
-              // Speichere Scrollposition, bevor Suche geändert wird
               if (viewportRef.current) {
                 globalScrollPosition = viewportRef.current.scrollTop;
               }
               setSearchQuery(e.target.value);
+              setDisplayedItemsCount(ITEMS_PER_PAGE); // Reset displayed items when searching
             }}
           />
         </div>
@@ -282,6 +297,10 @@ const Sidebar = ({ items, onSelectItem, selectedItem, darkMode = true }: Sidebar
             <div className="p-4 text-center text-gray-400 text-sm">
               Datenfehler: Items nicht im Array-Format
             </div>
+          ) : !isCategorySelected ? (
+            <div className="p-4 text-center text-gray-400 text-sm">
+              Bitte wählen Sie zuerst eine Kategorie aus
+            </div>
           ) : safeItems.length === 0 ? (
             <div className="p-4 text-center text-gray-400 text-sm">
               Keine Items verfügbar
@@ -291,37 +310,50 @@ const Sidebar = ({ items, onSelectItem, selectedItem, darkMode = true }: Sidebar
               Keine Einträge zur Suchanfrage gefunden
             </div>
           ) : (
-            <div style={{ height: totalHeight, position: 'relative' }} className="p-1">
-              {virtualItems.map(({ item, offsetTop }) => (
-                <div 
-                  key={item.id}
-                  style={{ 
-                    position: 'absolute',
-                    top: 0,
-                    transform: `translateY(${offsetTop}px)`,
-                    width: 'calc(100% - 8px)',
-                    height: `${ITEM_HEIGHT}px`
-                  }}
-                  className={`px-2 py-1 hover:${darkMode ? 'bg-cyrus-dark-lighter' : 'bg-gray-300'} cursor-[url(/lovable-uploads/Cursor.png),pointer] rounded text-sm ${
-                    selectedItem?.id === item.id 
-                      ? darkMode 
-                        ? 'bg-cyrus-blue text-white' 
-                        : 'bg-blue-500 text-white'
-                      : darkMode
-                        ? 'text-gray-300'
-                        : 'text-gray-700'
-                  } flex items-center`}
-                  onClick={() => handleItemSelect(item)}
-                >
-                  {/* Show only the item name part instead of ID+name */}
-                  <span className="truncate">
-                    {item.displayName 
-                      ? extractItemName(item.displayName) 
-                      : (item.data?.szName as string) || item.name || item.id}
-                  </span>
+            <>
+              <div style={{ height: totalHeight, position: 'relative' }} className="p-1">
+                {virtualItems.map(({ item, offsetTop }) => (
+                  <div 
+                    key={item.id}
+                    style={{ 
+                      position: 'absolute',
+                      top: 0,
+                      transform: `translateY(${offsetTop}px)`,
+                      width: 'calc(100% - 8px)',
+                      height: `${ITEM_HEIGHT}px`
+                    }}
+                    className={`px-2 py-1 hover:${darkMode ? 'bg-cyrus-dark-lighter' : 'bg-gray-300'} cursor-[url(/lovable-uploads/Cursor.png),pointer] rounded text-sm ${
+                      selectedItem?.id === item.id 
+                        ? darkMode 
+                          ? 'bg-cyrus-blue text-white' 
+                          : 'bg-blue-500 text-white'
+                        : darkMode
+                          ? 'text-gray-300'
+                          : 'text-gray-700'
+                    } flex items-center`}
+                    onClick={() => handleItemSelect(item)}
+                  >
+                    <span className="truncate">
+                      {item.displayName 
+                        ? extractItemName(item.displayName) 
+                        : (item.data?.szName as string) || item.name || item.id}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {filteredItems.length > displayedItemsCount && (
+                <div className="p-2 flex justify-center">
+                  <Button
+                    onClick={handleLoadMore}
+                    variant="ghost"
+                    className="w-full flex items-center justify-center gap-2 text-sm"
+                  >
+                    <ChevronDown size={16} />
+                    Weitere laden ({filteredItems.length - displayedItemsCount} übrig)
+                  </Button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </ScrollAreaPrimitive.Viewport>
         <ScrollAreaPrimitive.Scrollbar 
