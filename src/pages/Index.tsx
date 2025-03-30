@@ -10,6 +10,7 @@ import SplashScreen from "../components/SplashScreen";
 import MainContent, { WelcomeScreen } from "../components/main/MainContent";
 import OpenTabs from "../components/main/OpenTabs";
 import ChangelogDialog from "../components/ChangelogDialog";
+import CollectingPage from "../components/collector/CollectingPage";
 import { ResourceItem, FileUploadConfig, LogEntry } from "../types/fileTypes";
 import { serializeToText, saveTextFile, saveAllModifiedFiles, getModifiedFiles, savePropItemChanges } from "../utils/file/fileOperations";
 import { toast } from "sonner";
@@ -346,12 +347,14 @@ const Index = () => {
         />
         
         <div className="flex flex-1 overflow-hidden">
-          <Sidebar 
-            items={getFilteredItems(fileData, currentTab)} 
-            onSelectItem={(item) => handleSelectItem(item, showSettings, showToDoPanel)}
-            selectedItem={selectedItem || undefined}
-            darkMode={settings.darkMode}
-          />
+          {currentTab !== "Collecting" && (
+            <Sidebar 
+              items={getFilteredItems(fileData, currentTab)} 
+              onSelectItem={(item) => handleSelectItem(item, showSettings, showToDoPanel)}
+              selectedItem={selectedItem || undefined}
+              darkMode={settings.darkMode}
+            />
+          )}
               
           <div className="flex-1 flex flex-col overflow-hidden">
             <TabNav 
@@ -371,39 +374,45 @@ const Index = () => {
               currentTheme={currentTheme}
               settings={settings}
             />
-                
-            <MainContent 
-              showSettings={showSettings}
-              showToDoPanel={showToDoPanel}
-              selectedItem={selectedItem}
-              handleUpdateItem={handleUpdateItem}
-              editMode={editMode}
-              undoStack={undoStack}
-              redoStack={redoStack}
-              handleUndo={handleUndo}
-              handleRedo={handleRedo}
-              settings={settings}
-              setSettings={setSettings}
-              fileData={fileData}
-              currentTab={currentTab}
-              themes={themes}
-              fontOptions={fontOptions}
-              currentTheme={currentTheme}
-              onShowFileUpload={() => handleShowFileUpload('header')}
-              onShowSettings={() => {
-                setShowSettings(true);
-                setSelectedItem(null);
-                setShowToDoPanel(false);
-              }}
-              onShowChangelog={() => {
-                setShowChangelog(true);
-                setShowSettings(false);
-                setSelectedItem(null);
-                setShowToDoPanel(false);
-                setShowLoggingSystem(false);
-              }}
-              loadDefaultFiles={loadDefaultFiles}
-            />
+            
+            {currentTab === "Collecting" ? (
+              <div className="flex-1 overflow-auto">
+                <CollectingPage onLoadResourceFile={() => handleShowFileUpload('header')} />
+              </div>
+            ) : (
+              <MainContent 
+                showSettings={showSettings}
+                showToDoPanel={showToDoPanel}
+                selectedItem={selectedItem}
+                handleUpdateItem={handleUpdateItem}
+                editMode={editMode}
+                undoStack={undoStack}
+                redoStack={redoStack}
+                handleUndo={handleUndo}
+                handleRedo={handleRedo}
+                settings={settings}
+                setSettings={setSettings}
+                fileData={fileData}
+                currentTab={currentTab}
+                themes={themes}
+                fontOptions={fontOptions}
+                currentTheme={currentTheme}
+                onShowFileUpload={() => handleShowFileUpload('header')}
+                onShowSettings={() => {
+                  setShowSettings(true);
+                  setSelectedItem(null);
+                  setShowToDoPanel(false);
+                }}
+                onShowChangelog={() => {
+                  setShowChangelog(true);
+                  setShowSettings(false);
+                  setSelectedItem(null);
+                  setShowToDoPanel(false);
+                  setShowLoggingSystem(false);
+                }}
+                loadDefaultFiles={loadDefaultFiles}
+              />
+            )}
           </div>
         </div>
         
