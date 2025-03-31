@@ -328,18 +328,7 @@ function createWindow() {
       
       // Write the file with explicit error handling
       try {
-        // Backup existing file if it exists
-        if (fs.existsSync(fullPath)) {
-          const backupPath = `${fullPath}.bak`;
-          try {
-            fs.copyFileSync(fullPath, backupPath);
-            console.log(`Backup erstellt: ${backupPath}`);
-          } catch (backupError) {
-            console.warn(`Konnte kein Backup erstellen: ${backupError.message}`);
-          }
-        }
-        
-        // Verwende writeFileSync, um sicherzustellen, dass die Datei komplett geschrieben wird
+        // Entferne den Backup-Code - Dateien direkt überschreiben
         fs.writeFileSync(fullPath, content, { encoding: 'utf8', flag: 'w' });
         console.log(`Datei erfolgreich nach ${fullPath} geschrieben`);
         
@@ -512,18 +501,7 @@ function createWindow() {
           // The full path including filename
           const fullPath = path.join(finalPath, file.name);
           
-          // Backup existing file if it exists
-          if (fs.existsSync(fullPath)) {
-            const backupPath = `${fullPath}.bak`;
-            try {
-              fs.copyFileSync(fullPath, backupPath);
-              console.log(`Backup erstellt: ${backupPath}`);
-            } catch (backupError) {
-              console.warn(`Konnte kein Backup erstellen: ${backupError.message}`);
-            }
-          }
-          
-          // Write the file
+          // Entferne den Backup-Code - Dateien direkt überschreiben
           fs.writeFileSync(fullPath, finalContent, { encoding: 'utf8', flag: 'w' });
           
           // Verify the file was actually written
