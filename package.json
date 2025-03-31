@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "public/electron.cjs",
   "scripts": {
     "dev": "node electron-start.cjs",
     "electron": "node electron-start.cjs",

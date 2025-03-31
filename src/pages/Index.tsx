@@ -112,7 +112,7 @@ const Index = () => {
   
   const handleSaveFile = async () => {
     if (!fileData || !selectedItem) {
-      toast.warning("Keine Datei oder kein Element zum Speichern ausgewählt");
+      toast.warning("Kein Element ausgewählt zum Speichern");
       return;
     }
     
@@ -125,7 +125,13 @@ const Index = () => {
         return;
       }
       
-      // Speichere nur das ausgewählte propItem
+      // Stelle vor dem Speichern sicher, dass Änderungen am displayName 
+      // in beiden Dateien berücksichtigt werden
+      const { ensurePropItemConsistency } = await import('../utils/file/fileOperations');
+      await ensurePropItemConsistency(fileData);
+      
+      // Speichere das ausgewählte propItem
+      console.log(`Speichere das aktuell ausgewählte Item (${selectedItem.id})`);
       await savePropItemChanges([itemToSave]);
       
       // Speichere die Haupt-Datei
@@ -155,7 +161,7 @@ const Index = () => {
       }
     } catch (error) {
       toast.error("Fehler beim Speichern des Elements");
-      console.error(error);
+      console.error("Fehler beim Speichern des Elements:", error);
     }
   };
   
@@ -169,7 +175,12 @@ const Index = () => {
       // Sammle alle Items aus den offenen Tabs
       const tabItems = openTabs.map(tab => tab.item);
       
+      // Stelle vor dem Speichern sicher, dass alle Änderungen am displayName in beiden Dateien berücksichtigt werden
+      const { ensurePropItemConsistency } = await import('../utils/file/fileOperations');
+      await ensurePropItemConsistency(fileData);
+      
       // Speichere die propItems aus allen Tabs
+      console.log(`Speichere ${tabItems.length} Items aus offenen Tabs`);
       await savePropItemChanges(tabItems);
       
       // Speichere die Haupt-Datei
@@ -199,7 +210,7 @@ const Index = () => {
       }
     } catch (error) {
       toast.error("Fehler beim Speichern der Tabs");
-      console.error(error);
+      console.error("Fehler beim Speichern aller Tabs:", error);
     }
   };
   

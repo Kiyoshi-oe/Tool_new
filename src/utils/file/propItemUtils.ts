@@ -246,6 +246,34 @@ export const updatePropItemProperties = (
     // Markiere explizit, dass dieses Item als modifiziert betrachtet werden soll,
     // auch wenn es nicht im aktuellen Tab geöffnet ist
     markItemAsModified(itemId, displayName, description);
+    
+    // Markiere auch die Spec_Item.txt als modifiziert, falls sie es noch nicht ist
+    try {
+      const { trackModifiedFile } = require('./fileOperations');
+      
+      // Erstelle einfachen Platzhalter für Spec_Item.txt, der anzeigt, dass eine Änderung vorgenommen wurde
+      const specItemPlaceholder = JSON.stringify({
+        item: {
+          id: itemId,
+          name: itemName,
+          displayName: displayName,
+          description: description
+        },
+        isSpecItemModification: true,
+        modificationTime: Date.now()
+      });
+      
+      trackModifiedFile("Spec_Item.txt", specItemPlaceholder, {
+        containsDisplayNameChanges: true,
+        relatedItemId: itemId,
+        modifiedTimestamp: Date.now()
+      });
+      
+      console.log(`Spec_Item.txt wurde ebenfalls als modifiziert markiert für Item ${itemId}`);
+    } catch (trackError) {
+      console.error("Fehler beim Markieren von Spec_Item.txt als modifiziert:", trackError);
+      // Fortfahren, auch wenn das Tracking fehlschlägt
+    }
   } catch (error) {
     console.error("Fehler beim Tracking von PropItem-Änderungen:", error);
     // Fahre fort, auch wenn Tracking fehlschlägt
@@ -403,19 +431,52 @@ export const savePropItemsToFile = async (items: any[]): Promise<boolean> => {
     console.log("Serialisiere propItem-Änderungen für", items.length, "Items");
     
     // Importiere die benötigte Funktion aus fileOperations
-    const { serializePropItemData } = await import('./fileOperations');
+    const { serializePropItemData, saveTextFile, trackModifiedFile } = await import('./fileOperations');
     const content = serializePropItemData(items);
     
-    // Speichere in die Datei propItem.txt.txt
-    const success = await saveToResourceFolder(content, "propItem.txt.txt");
+    // Vor dem Speichern beide Dateien als modifiziert markieren
+    trackModifiedFile("propItem.txt.txt", content, {
+      isSaving: true,
+      timestamp: Date.now()
+    });
     
-    if (success) {
-      console.log("PropItem.txt.txt erfolgreich gespeichert");
-      // Lösche die modifizierten Items aus dem Cache
-      clearModifiedItems();
-      return true;
-    } else {
-      console.error("Fehler beim Speichern von PropItem.txt.txt");
+    // Speichere in die Datei propItem.txt.txt
+    try {
+      const success = await saveTextFile(content, "propItem.txt.txt");
+      
+      if (success) {
+        console.log("PropItem.txt.txt erfolgreich gespeichert");
+        // Lösche die modifizierten Items aus dem Cache
+        clearModifiedItems();
+        return true;
+      } else {
+        console.error("Fehler beim Speichern von PropItem.txt.txt");
+        
+        // Bei Fehler trotzdem einen neuen Versuch mit saveToResourceFolder starten
+        const retrySuccess = await saveToResourceFolder(content, "propItem.txt.txt");
+        if (retrySuccess) {
+          console.log("PropItem.txt.txt beim zweiten Versuch erfolgreich gespeichert");
+          clearModifiedItems();
+          return true;
+        }
+        
+        return false;
+      }
+    } catch (saveError) {
+      console.error("Fehler beim Speichern von PropItem.txt.txt:", saveError);
+      
+      // Versuche es mit der Backup-Methode
+      try {
+        const retrySuccess = await saveToResourceFolder(content, "propItem.txt.txt");
+        if (retrySuccess) {
+          console.log("PropItem.txt.txt über Backup-Methode erfolgreich gespeichert");
+          clearModifiedItems();
+          return true;
+        }
+      } catch (retryError) {
+        console.error("Auch Backup-Speichermethode fehlgeschlagen:", retryError);
+      }
+      
       return false;
     }
   } catch (error) {

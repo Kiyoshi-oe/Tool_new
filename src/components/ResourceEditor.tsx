@@ -113,61 +113,115 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
   const handleDataChange = useMemo(() => {
     return (field: string, value: string | number | boolean) => {
       // If not in edit mode, don't allow changes
-      if (!editMode) return;
+      if (!editMode) {
+        console.warn("Änderungen im Lesemodus ignoriert");
+        return;
+      }
+
+      let updatedItem = null;
       
-      // Store the old value for logging purposes
-      const oldValue = 
-        field === 'displayName' ? localItem.displayName : 
-        field === 'description' ? localItem.description : 
-        localItem.data[field];
-      
-      // Create an updated item, handling special fields like displayName and description differently
-      let updatedItem;
-      
+      // Alte Werte für Protokollierung speichern
+      const oldValues = {
+        displayName: localItem.displayName,
+        description: localItem.description
+      };
+
       if (field === 'displayName') {
         updatedItem = {
           ...localItem,
           displayName: value as string
         };
         
-        // Track propItem.txt.txt modification when display name changes
-        trackPropItemChanges(
-          localItem.id, 
-          localItem.name, 
-          value as string, 
-          localItem.description || ''
-        );
+        // Ausführliches Logging für die Nachverfolgung von Änderungen
+        console.log(`Änderung des Anzeigenamens für Item ${localItem.id}`);
+        console.log(`  Von: "${localItem.displayName || ''}" → Nach: "${value}"`);
         
-        // Explizit beide Dateien als modifiziert markieren
-        trackModifiedFile("Spec_Item.txt", JSON.stringify({
-          ...localItem,
-          displayName: value as string,
-          isSpecItemFile: true
-        }));
-        
-        console.log(`Name für Item ${localItem.id} wurde aktualisiert: "${value}"`);
+        // Verfolge Änderungen in propItem.txt.txt und stets sicher, dass beide Dateien aktualisiert werden
+        try {
+          // Markiere beide Dateien als modifiziert
+          trackPropItemChanges(
+            localItem.id, 
+            localItem.name, 
+            value as string, 
+            localItem.description || ''
+          );
+          
+          // Explizit beide Dateien als modifiziert markieren
+          trackModifiedFile("Spec_Item.txt", JSON.stringify({
+            ...localItem,
+            displayName: value as string,
+            isSpecItemFile: true
+          }), {
+            containsDisplayNameChanges: true,
+            relatedItemId: localItem.id,
+            oldValue: localItem.displayName || '',
+            newValue: value as string
+          });
+          
+          // Direkt markItemAsModified aufrufen, um das Item im Cache zu aktualisieren
+          try {
+            const { markItemAsModified } = require('../utils/file/propItemUtils');
+            markItemAsModified(
+              localItem.id,
+              value as string,
+              localItem.description || ''
+            );
+          } catch (importError) {
+            console.warn("Konnte markItemAsModified nicht importieren:", importError);
+          }
+          
+          console.log(`Name für Item ${localItem.id} wurde aktualisiert und in beiden Dateien verfolgt`);
+        } catch (trackError) {
+          console.error("Fehler beim Verfolgen von Änderungen in beiden Dateien:", trackError);
+        }
       } else if (field === 'description') {
         updatedItem = {
           ...localItem,
           description: value as string
         };
         
+        // Ausführliches Logging für die Nachverfolgung von Änderungen
+        console.log(`Änderung der Beschreibung für Item ${localItem.id}`);
+        console.log(`  Von: "${(localItem.description || '').substring(0, 30)}${(localItem.description || '').length > 30 ? '...' : ''}"`);
+        console.log(`  Nach: "${(value as string).substring(0, 30)}${(value as string).length > 30 ? '...' : ''}"`);
+        
         // Track propItem.txt.txt modification when description changes
-        trackPropItemChanges(
-          localItem.id, 
-          localItem.name, 
-          localItem.displayName || '', 
-          value as string
-        );
-        
-        // Explizit beide Dateien als modifiziert markieren
-        trackModifiedFile("Spec_Item.txt", JSON.stringify({
-          ...localItem,
-          description: value as string,
-          isSpecItemFile: true
-        }));
-        
-        console.log(`Beschreibung für Item ${localItem.id} wurde aktualisiert`);
+        try {
+          trackPropItemChanges(
+            localItem.id, 
+            localItem.name, 
+            localItem.displayName || '', 
+            value as string
+          );
+          
+          // Explizit beide Dateien als modifiziert markieren
+          trackModifiedFile("Spec_Item.txt", JSON.stringify({
+            ...localItem,
+            description: value as string,
+            isSpecItemFile: true
+          }), {
+            containsDescriptionChanges: true,
+            relatedItemId: localItem.id,
+            oldValue: (localItem.description || '').substring(0, 50),
+            newValue: (value as string).substring(0, 50)
+          });
+          
+          // Direkt markItemAsModified aufrufen, um das Item im Cache zu aktualisieren
+          try {
+            const { markItemAsModified } = require('../utils/file/propItemUtils');
+            markItemAsModified(
+              localItem.id,
+              localItem.displayName || '',
+              value as string
+            );
+          } catch (importError) {
+            console.warn("Konnte markItemAsModified nicht importieren:", importError);
+          }
+          
+          console.log(`Beschreibung für Item ${localItem.id} wurde aktualisiert und in beiden Dateien verfolgt`);
+        } catch (trackError) {
+          console.error("Fehler beim Verfolgen von Änderungen in beiden Dateien:", trackError);
+        }
       } else if (field === 'itemId') {
         // Special handling for item ID changes (defineItem.h updates)
         const defineName = localItem.data.dwID as string;
@@ -226,9 +280,9 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
       }
       
       setLocalItem(updatedItem);
-      onUpdateItem(updatedItem, field, oldValue);
+      onUpdateItem(updatedItem, field, field === 'displayName' ? oldValues.displayName : oldValues.description);
     };
-  }, [localItem, editMode, onUpdateItem]);
+  }, [editMode, localItem, onUpdateItem]);
   
   // Performance-Optimierung: Memoized handleEffectChange
   const handleEffectChange = useMemo(() => {

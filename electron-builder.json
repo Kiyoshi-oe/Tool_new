@@ -1,4 +1,3 @@
-
 {
   "appId": "com.lovable.cyrus-resource-tool",
   "productName": "Cyrus Resource Tool",
@@ -12,11 +11,12 @@
   },
   "files": [
     "dist/**/*",
-    "public/electron.js",
+    "public/electron.cjs",
+    "public/preload.js",
     "package.json"
   ],
   "extraMetadata": {
-    "main": "public/electron.js",
+    "main": "public/electron.cjs",
     "description": "A resource tool for Cyrus development",
     "author": "Cyrus Team"
   },

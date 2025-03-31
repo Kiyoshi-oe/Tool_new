@@ -1,7 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const isDev = process.env.NODE_ENV !== 'production';
+const isDev = process.env.NODE_ENV !== 'production' || process.env.ELECTRON_START_URL;
 
 function createWindow() {
   // Create the browser window
@@ -20,13 +20,48 @@ function createWindow() {
   // Set application menu
   mainWindow.setMenuBarVisibility(false);
 
+  // Debug-Info ausgeben
+  console.log('App path:', app.getAppPath());
+  console.log('__dirname:', __dirname);
+  console.log('process.cwd():', process.cwd());
+  console.log('isDev:', isDev);
+  console.log('ELECTRON_START_URL:', process.env.ELECTRON_START_URL);
+  console.log('VITE_DEV_SERVER_URL:', process.env.VITE_DEV_SERVER_URL);
+
   // Load the app
   if (isDev) {
-    mainWindow.loadURL('http://localhost:8080');
+    const devServerUrl = process.env.ELECTRON_START_URL || process.env.VITE_DEV_SERVER_URL || 'http://localhost:8081';
+    console.log('Versuche Dev-Server zu laden:', devServerUrl);
+    mainWindow.loadURL(devServerUrl).catch(err => {
+      console.error('Fehler beim Laden der URL:', err);
+      // Fallback auf lokale HTML-Datei bei Fehler
+      const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
+      if (fs.existsSync(indexPath)) {
+        console.log('Verwende Fallback-HTML-Datei:', indexPath);
+        mainWindow.loadFile(indexPath);
+      } else {
+        dialog.showErrorBox(
+          'Laden fehlgeschlagen',
+          `Konnte weder Dev-Server noch lokale HTML-Datei laden. URL: ${devServerUrl}, Fehler: ${err.message}`
+        );
+      }
+    });
     // Open DevTools in development mode
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    // Try to load the index.html from the dist folder
+    const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
+    console.log('Versuche Produktions-HTML zu laden:', indexPath);
+    
+    if (fs.existsSync(indexPath)) {
+      mainWindow.loadFile(indexPath);
+    } else {
+      console.error('index.html nicht gefunden:', indexPath);
+      dialog.showErrorBox(
+        'Laden fehlgeschlagen',
+        `Die Anwendungsdateien wurden nicht gefunden. Pfad: ${indexPath}`
+      );
+    }
   }
 
   // Handle errors when loading the app

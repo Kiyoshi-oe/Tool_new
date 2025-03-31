@@ -3,15 +3,16 @@ import { FileData, LogEntry, ResourceItem } from "../types/fileTypes";
 import { toast } from "sonner";
 import { trackModifiedFile, trackPropItemChanges } from "../utils/file/fileOperations";
 
-interface ItemEditorProps {
-  fileData: FileData | null;
-  setFileData: React.Dispatch<React.SetStateAction<FileData | null>>;
+export interface ItemEditorProps {
+  fileData: any;
+  setFileData: (data: any) => void;
   selectedItem: ResourceItem | null;
-  setSelectedItem: React.Dispatch<React.SetStateAction<ResourceItem | null>>;
-  settings: any;
-  setLogEntries: React.Dispatch<React.SetStateAction<LogEntry[]>>;
+  setSelectedItem: (item: ResourceItem | null) => void;
+  setLogEntries: (callback: (prev: LogEntry[]) => LogEntry[]) => void;
   updateTabItem: (item: ResourceItem) => void;
   saveUndoState: () => void;
+  openTabs: any[];
+  setOpenTabs: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
 // Lookup-Cache: Map-Objekt für schnellen Zugriff auf Items nach ID
@@ -24,10 +25,11 @@ export const useItemEditor = ({
   setFileData,
   selectedItem,
   setSelectedItem,
-  settings,
   setLogEntries,
   updateTabItem,
-  saveUndoState
+  saveUndoState,
+  openTabs,
+  setOpenTabs
 }: ItemEditorProps) => {
   const [editMode, setEditMode] = useState(false);
   
@@ -45,64 +47,84 @@ export const useItemEditor = ({
   // Performance-Optimierung: handleUpdateItem memoisieren
   const handleUpdateItem = useCallback((updatedItem: ResourceItem, field?: string, oldValue?: any) => {
     if (!fileData || !editMode) return;
+
+    console.log(`Aktualisiere Item ${updatedItem.id} (${updatedItem.name})`, `Feld: ${field || 'unbekannt'}`);
     
-    // Performance-Optimierung: Keine vollständige Array-Iteration für Updating
-    const updatedItems = [...fileData.items];
-    const itemIndex = updatedItem.id ? 
-      updatedItems.findIndex(item => item.id === updatedItem.id) : -1;
-    
-    if (itemIndex >= 0) {
-      updatedItems[itemIndex] = updatedItem;
-      
-      // Cache aktualisieren
-      itemCache.set(updatedItem.id, updatedItem);
-    } else {
-      // Fallback: Map über das gesamte Array
-      const newItems = fileData.items.map(item => 
-        item.id === updatedItem.id ? updatedItem : item
-      );
-      
-      // Nur aktualisieren, wenn sich tatsächlich etwas geändert hat
-      if (JSON.stringify(newItems) !== JSON.stringify(fileData.items)) {
-        updatedItems.splice(0, updatedItems.length, ...newItems);
+    // Finde das Item im fileData und aktualisiere es
+    const updatedItems = fileData.items.map(item => {
+      if (item.id === updatedItem.id) {
+        // Für displayName und description spezielles Handling, um Synchronisation zu gewährleisten
+        if (field === 'displayName' || field === 'description') {
+          console.log(`Ändere ${field} von "${oldValue || 'undefiniert'}" zu "${field === 'displayName' ? updatedItem.displayName : updatedItem.description}"`);
+          
+          // Stelle sicher, dass die Änderung in beiden Dateien verfolgt wird
+          try {
+            // Rufe beide Tracking-Funktionen auf, um die Änderungen in beiden Dateien zu verfolgen
+            trackPropItemChanges(
+              updatedItem.id,
+              updatedItem.name,
+              updatedItem.displayName || '',
+              updatedItem.description || ''
+            );
+            
+            // Importiere und rufe markItemAsModified auf, um das Item im Cache zu aktualisieren
+            try {
+              const { markItemAsModified } = require('../utils/file/propItemUtils');
+              markItemAsModified(
+                updatedItem.id,
+                updatedItem.displayName || '',
+                updatedItem.description || ''
+              );
+              console.log(`Item ${updatedItem.id} im modifiedItems-Cache markiert`);
+            } catch (importError) {
+              console.warn(`Konnte markItemAsModified nicht importieren:`, importError);
+            }
+          } catch (error) {
+            console.error(`Fehler beim Tracking von PropItem-Änderungen:`, error);
+          }
+        }
         
-        // Cache aktualisieren
-        itemCache.set(updatedItem.id, updatedItem);
+        // Aktualisiere das Item mit den neuen Werten
+        return {
+          ...item,
+          ...updatedItem
+        };
       }
+      return item;
+    });
+
+    // Aktualisiere den fileData-Zustand
+    setFileData({
+      ...fileData,
+      items: updatedItems
+    });
+
+    // Aktualisiere auch den selectedItem-Zustand, falls nötig
+    if (selectedItem && selectedItem.id === updatedItem.id) {
+      setSelectedItem({
+        ...selectedItem,
+        ...updatedItem
+      });
     }
-    
-    // Performance-Optimierung: Nur aktualisieren, wenn sich etwas geändert hat
-    if (itemIndex >= 0 || JSON.stringify(updatedItems) !== JSON.stringify(fileData.items)) {
-      // Deferred state update für bessere UI-Reaktionsfähigkeit
-      setTimeout(() => {
-        setFileData({
-          ...fileData,
-          items: updatedItems
-        });
-      }, 0);
+
+    // Aktualisiere auch die openTabs, falls das Item dort vorhanden ist
+    if (openTabs.length > 0) {
+      const updatedTabs = openTabs.map(tab => {
+        if (tab.item.id === updatedItem.id) {
+          return {
+            ...tab,
+            item: {
+              ...tab.item,
+              ...updatedItem
+            }
+          };
+        }
+        return tab;
+      });
+
+      setOpenTabs(updatedTabs);
     }
-    
-    updateTabItem(updatedItem);
-    
-    if (settings.enableLogging && field && oldValue !== undefined) {
-      const newLogEntry: LogEntry = {
-        timestamp: Date.now(),
-        itemId: updatedItem.id,
-        itemName: updatedItem.name,
-        field,
-        oldValue,
-        newValue: field === 'displayName' 
-          ? updatedItem.displayName 
-          : field === 'description' 
-          ? updatedItem.description 
-          : updatedItem.data[field] || ''
-      };
-      
-      setLogEntries(prev => [newLogEntry, ...prev]);
-    }
-    
-    setSelectedItem(updatedItem);
-    
+
     // Track that the Spec_Item.txt file has been modified
     // Mark this as a spec item file to ensure it's preserved exactly
     const serializedData = JSON.stringify({
@@ -123,7 +145,9 @@ export const useItemEditor = ({
     // Verbessertes Tracking der Änderungen für beide Dateien
     trackModifiedFile("Spec_Item.txt", serializedData, {
       containsDisplayNameChanges: field === 'displayName',
-      containsDescriptionChanges: field === 'description'
+      containsDescriptionChanges: field === 'description',
+      modifiedField: field,
+      modifiedTimestamp: Date.now()
     });
     
     // Also track propItem changes if this is a displayName or description change
@@ -140,10 +164,21 @@ export const useItemEditor = ({
         updatedItem.description || ''
       );
       
+      // Rufe auch sicherheitshalber ensurePropItemConsistency auf
+      try {
+        const { ensurePropItemConsistency } = require('../utils/file/fileOperations');
+        ensurePropItemConsistency({
+          ...fileData,
+          items: updatedItems
+        });
+      } catch (error) {
+        console.warn("Konnte ensurePropItemConsistency nicht aufrufen:", error);
+      }
+      
       // Explizites Flag für Konsistenz zwischen beiden Dateien setzen
       console.log(`PropItem-Änderungen für ${field} wurden erfasst und für Spec_Item.txt und PropItem.txt.txt synchronisiert`);
     }
-  }, [fileData, editMode, settings, setFileData, setLogEntries, setSelectedItem, updateTabItem]);
+  }, [fileData, editMode, selectedItem, openTabs, setFileData, setSelectedItem, setOpenTabs]);
   
   // Performance-Optimierung: handleSelectItem memoisieren
   const handleSelectItem = useCallback((item: ResourceItem, showSettings: boolean, showToDoPanel: boolean) => {

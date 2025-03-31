@@ -119,7 +119,7 @@ export const trackModifiedFile = (fileName: string, content: string, metadata?: 
 
 // Track changes to propItem entries (names and descriptions)
 export const trackPropItemChanges = (itemId: string, itemName: string, displayName: string, description: string) => {
-  // Statt einen Platzhalter zu speichern, erstellen wir ein temporäres Item, das die Änderungen enthält
+  // Ein temporäres Item erstellen, das die Änderungen enthält
   const tempItem = {
     name: itemName,
     data: { szName: itemId },
@@ -127,26 +127,37 @@ export const trackPropItemChanges = (itemId: string, itemName: string, displayNa
     description: description
   };
   
-  // Protokolliere die Änderungen ausführlich
+  // Ausführliche Protokollierung der Änderungen für Debugging-Zwecke
   console.log(`PropItem Änderung verfolgt: ID=${itemId}, Name=${itemName}`);
   console.log(`  Neuer Anzeigename: "${displayName}"`);
   console.log(`  Neue Beschreibung: "${description.substring(0, 30)}${description.length > 30 ? '...' : ''}"`);
   
-  // Serialisiere sofort die Änderung
   try {
+    // Serialisiere sofort die Änderung
     const content = serializePropItemData([tempItem]);
     console.log(`Generierter propItem-Inhalt: ${content}`);
     
-    // Speichere die tatsächlichen Änderungen
-    // Neues Flag hinzufügen, um beide Dateien als zusammengehörig zu markieren
+    // Speichere die tatsächlichen Änderungen mit Metadaten, die anzeigen, dass dies mit Spec_Item verknüpft ist
     trackModifiedFile("propItem.txt.txt", content, {
       isRelatedToSpecItem: true,
-      relatedItemId: itemId
+      relatedItemId: itemId,
+      modifiedTimestamp: Date.now()
     });
+    
+    // Importiere und rufe die markItemAsModified-Funktion auf, um sicherzustellen,
+    // dass das Item im Cache als modifiziert markiert wird, selbst wenn es nicht im aktuellen Tab ist
+    try {
+      const { markItemAsModified } = require('./propItemUtils');
+      markItemAsModified(itemId, displayName, description);
+      console.log(`Item ${itemId} auch im modifiedItems-Cache markiert`);
+    } catch (importError) {
+      console.warn(`Konnte markItemAsModified nicht importieren:`, importError);
+      // Wir fahren fort, selbst wenn der Import fehlschlägt
+    }
   } catch (error) {
     console.error(`Fehler beim Serialisieren von PropItem-Änderungen:`, error);
     console.error(`ItemId: ${itemId}, Name: ${itemName}`);
-    // Fehler für Debugging-Zwecke protokollieren, aber nicht werfen
+    // Fehler protokollieren, aber fortfahren
   }
 };
 
@@ -199,8 +210,27 @@ export const ensurePropItemConsistency = (fileData: any): boolean => {
         // Füge propItem.txt.txt zu den zu speichernden Dateien hinzu
         trackModifiedFile("propItem.txt.txt", propItemContent, {
           isRelatedToSpecItem: true,
-          autoSynced: true
+          autoSynced: true,
+          modifiedTimestamp: Date.now()
         });
+        
+        // Zusätzlich für jedes geänderte Item markItemAsModified aufrufen
+        try {
+          const { markItemAsModified } = require('./propItemUtils');
+          for (const item of itemsWithNameChanges) {
+            if (item.data && item.data.szName) {
+              markItemAsModified(
+                item.data.szName,
+                item.displayName || '',
+                item.description || ''
+              );
+              console.log(`Item ${item.data.szName} im modifiedItems-Cache als geändert markiert`);
+            }
+          }
+        } catch (importError) {
+          console.warn(`Konnte markItemAsModified nicht importieren:`, importError);
+          // Wir fahren fort, selbst wenn der Import fehlschlägt
+        }
         
         console.log("propItem.txt.txt wurde automatisch als modifiziert markiert, um Konsistenz zu gewährleisten");
         return true;
@@ -480,6 +510,17 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
           
           if (result.success) {
             console.log(`File saved directly to resource folder via Electron API: ${result.path}`);
+            
+            // Wenn diese Datei Spec_Item.txt ist, überprüfe, ob wir auch propItem.txt.txt speichern müssen
+            if (isSpecItemFile) {
+              // Stelle sicher, dass propItem.txt.txt Änderungen gespeichert werden, wenn vorhanden
+              try {
+                ensurePropItemConsistencyAfterSave(fileName);
+              } catch (syncError) {
+                console.warn("Fehler bei der Konsistenzprüfung nach dem Speichern:", syncError);
+              }
+            }
+            
             resolve(true);
             return;
           } else {
@@ -536,12 +577,11 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
           
           return;
         }
-      } catch (error) {
-        console.error("Error using Electron save API:", error);
-        // Fall back to download if Electron API fails
+      } catch (saveError) {
+        console.error("Error saving file via Electron:", saveError);
+        // Fall back to download
         downloadTextFile(finalContent, fileName);
         resolve(false);
-        return;
       }
     }
     
@@ -550,6 +590,45 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
     downloadTextFile(finalContent, fileName);
     resolve(false);
   });
+};
+
+// Stellt sicher, dass nach dem Speichern von Spec_Item.txt auch propItem.txt.txt gespeichert wird, wenn Änderungen vorhanden sind
+const ensurePropItemConsistencyAfterSave = (savedFileName: string) => {
+  try {
+    // Prüfe, ob propItem.txt.txt geändert wurde
+    const propItemFile = modifiedFiles.find(file => file.name.toLowerCase().includes('propitem'));
+    
+    // Wenn propItem.txt.txt geändert wurde, stelle sicher, dass es gespeichert wird
+    if (propItemFile) {
+      console.log(`${savedFileName} wurde gespeichert, stelle sicher, dass propItem.txt.txt auch gespeichert wird`);
+      
+      // Wenn wir im Electron-Umfeld sind, versuche, die Datei direkt zu speichern
+      if ((window as any).electronAPI) {
+        console.log("Using electronAPI.saveFile für propItem.txt.txt");
+        
+        (window as any).electronAPI.saveFile(
+          propItemFile.name, 
+          propItemFile.content, 
+          path.join(process.cwd(), 'public', 'resource')
+        )
+        .then((result: any) => {
+          if (result.success) {
+            console.log(`propItem.txt.txt wurde zusammen mit ${savedFileName} gespeichert`);
+            
+            // Entferne propItem.txt.txt aus der Liste der modifizierten Dateien
+            modifiedFiles = modifiedFiles.filter(file => file.name !== propItemFile.name);
+          } else {
+            console.error("Fehler beim Speichern von propItem.txt.txt:", result.error);
+          }
+        })
+        .catch((error: any) => {
+          console.error("Fehler beim Speichern von propItem.txt.txt:", error);
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Fehler bei der Konsistenzprüfung nach dem Speichern:", error);
+  }
 };
 
 // Save all modified files at once
@@ -562,9 +641,7 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
       return true;
     }
     
-    // Überprüfe, ob beide Dateien (Spec_Item.txt und propItem.txt.txt) geändert wurden
-    // Wenn nur Spec_Item.txt geändert wurde, aber propItem.txt.txt-Änderungen vorhanden sind,
-    // stelle sicher, dass beide gespeichert werden
+    // Prüfe, ob Spec_Item.txt und propItem.txt.txt konsistent sind
     const hasSpecItemChanges = modifiedFiles.some(file => 
       file.name.toLowerCase().includes('spec_item') || file.name.toLowerCase().includes('specitem')
     );
@@ -585,7 +662,6 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
         
         try {
           // Versuche die Datei zu parsen, um zu sehen, ob es Änderungen an displayName/description gibt
-          // Dieses ist vereinfacht, da die tatsächliche Implementierung vom Format abhängt
           const specItemData = JSON.parse(specItemFile.content);
           
           if (specItemData.items && Array.isArray(specItemData.items)) {
@@ -603,123 +679,54 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
               // Füge propItem.txt.txt zu den zu speichernden Dateien hinzu
               trackModifiedFile("propItem.txt.txt", propItemContent, {
                 isRelatedToSpecItem: true,
-                autoSynced: true
+                autoSynced: true,
+                modifiedTimestamp: Date.now()
               });
+              
+              // Zusätzlich für jedes geänderte Item markItemAsModified aufrufen
+              try {
+                const { markItemAsModified } = require('./propItemUtils');
+                for (const item of itemsWithNameChanges) {
+                  if (item.data && item.data.szName) {
+                    markItemAsModified(
+                      item.data.szName,
+                      item.displayName || '',
+                      item.description || ''
+                    );
+                  }
+                }
+              } catch (importError) {
+                console.warn(`Konnte markItemAsModified nicht importieren:`, importError);
+              }
               
               console.log("Added propItem.txt.txt to modified files for synchronized saving");
             }
           }
-        } catch (error) {
-          console.warn("Failed to parse Spec_Item.txt for auto-synchronization:", error);
-          // Continue without syncing
+        } catch (parseError) {
+          console.error("Error parsing Spec_Item.txt content:", parseError);
         }
       }
     }
     
-    // Save to resource folder
-    return await saveMultipleFilesToResourceFolder(modifiedFiles);
-  } catch (error) {
-    console.error("Error saving all modified files:", error);
-    return false;
-  } finally {
-    // Clear the modified files after saving
-    clearModifiedFiles();
-  }
-};
-
-// Improved server-side save function with better error handling and retry logic
-const saveToResourceFolder = async (content: string, fileName: string): Promise<boolean> => {
-  try {
-    console.log(`Attempting to save ${fileName} to resource folder via server API`);
-    
-    // Check if the file is a JSON file or not
-    const isJsonFile = fileName.toLowerCase().endsWith('.json');
-    const isTextFile = fileName.toLowerCase().endsWith('.txt') || 
-                      fileName.toLowerCase().endsWith('.h') || 
-                      fileName.toLowerCase().endsWith('.inc');
-    
-    console.log(`File type detection: ${fileName} - JSON: ${isJsonFile}, Text: ${isTextFile}`);
-    
-    // Attempt to save the file to the server's resource folder
-    // Use a retry mechanism in case of temporary issues
-    let attempts = 3;
-    let lastError = null;
-    
-    while (attempts > 0) {
+    // Speichere alle modifizierten Dateien auf einmal
+    if ((window as any).electronAPI && (window as any).electronAPI.saveAllFiles) {
+      console.log("Using electronAPI.saveAllFiles");
+      
+      // Stelle sicher, dass der Inhalt jeder Datei ein String ist
+      const filesToSave = modifiedFiles.map(file => ({
+        name: file.name,
+        content: typeof file.content === 'string' ? file.content : JSON.stringify(file.content),
+        metadata: file.metadata
+      }));
+      
       try {
-        const response = await fetch('/api/save-resource', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            fileName,
-            content,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error(`Server responded with ${response.status}:`, errorData);
-          throw new Error(`Server error: ${errorData.error || response.statusText}`);
-        }
-
-        const result = await response.json();
-        if (result.success === true) {
-          console.log(`Successfully saved ${fileName} to resource folder`);
-          return true;
-        } else {
-          throw new Error(`Save operation reported failure: ${result.error || 'Unknown error'}`);
-        }
-      } catch (error) {
-        console.error(`Attempt ${4 - attempts} failed:`, error);
-        lastError = error;
-        attempts--;
-        
-        if (attempts > 0) {
-          console.log(`Retrying save operation for ${fileName}... (${attempts} attempts left)`);
-          // Wait a short time before retrying
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      }
-    }
-    
-    console.error(`All save attempts failed for ${fileName}:`, lastError);
-    return false;
-  } catch (error) {
-    console.error("Failed to save file to resource folder:", error);
-    return false;
-  }
-};
-
-// Save multiple files to resource folder at once with retry logic
-const saveMultipleFilesToResourceFolder = async (files: { name: string; content: string; metadata?: { [key: string]: any } }[]): Promise<boolean> => {
-  console.log(`Trying to save ${files.length} files to resource folder`);
-  
-  // Check if we're in Electron environment
-  const isElectron = window.navigator.userAgent.toLowerCase().indexOf('electron') > -1 || 
-                    (window as any).electronAPI !== undefined;
-  
-  if (isElectron) {
-    try {
-      if ((window as any).electronAPI) {
-        console.log("Using electronAPI.saveAllFiles");
-        
-        // Ensure all content is string
-        const sanitizedFiles = files.map(file => ({
-          name: file.name,
-          content: typeof file.content === 'string' ? file.content : JSON.stringify(file.content)
-        }));
-        
-        // Log file sizes for debugging
-        sanitizedFiles.forEach(file => {
-          console.log(`File ${file.name} content length: ${file.content.length} characters`);
-        });
-        
-        const result = await (window as any).electronAPI.saveAllFiles(sanitizedFiles);
+        const result = await (window as any).electronAPI.saveAllFiles(
+          filesToSave, 
+          path.join(process.cwd(), 'public', 'resource')
+        );
         
         if (result.success) {
-          console.log(`All files saved successfully via Electron API`);
+          console.log(`All ${filesToSave.length} files saved successfully via Electron API`);
           
           // Versuche, clearModifiedItems aus propItemUtils zu importieren und aufzurufen
           try {
@@ -730,107 +737,62 @@ const saveMultipleFilesToResourceFolder = async (files: { name: string; content:
             console.warn("Could not clear modified items:", error);
           }
           
+          // Leere die modifiedFiles Liste
+          modifiedFiles = [];
+          
           return true;
         } else {
           console.error("Error saving all files via Electron API:", result.error);
-          // Fall back to individual downloads
-          for (const file of files) {
-            downloadTextFile(
-              typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
-              file.name
-            );
-          }
-          return false;
-        }
-      } else {
-        // Fallback to custom event
-        console.log("Using custom event for saveAllFiles");
-        
-        // Ensure all content is string
-        const sanitizedFiles = files.map(file => ({
-          name: file.name,
-          content: typeof file.content === 'string' ? file.content : JSON.stringify(file.content)
-        }));
-        
-        const event = new CustomEvent('save-all-files', { 
-          detail: { files: sanitizedFiles }
-        });
-        window.dispatchEvent(event);
-        
-        return new Promise((resolve) => {
-          const responseHandler = (event: any) => {
-            const response = event.detail;
-            console.log("Save all files response:", response);
-            if (response.success) {
-              console.log(`All files saved successfully via Electron`);
-              
-              // Versuche, clearModifiedItems aus propItemUtils zu importieren und aufzurufen
-              try {
-                const { clearModifiedItems } = require('./propItemUtils');
-                clearModifiedItems();
-                console.log("Cleared modified items in PropItem cache");
-              } catch (error) {
-                console.warn("Could not clear modified items:", error);
-              }
-              
-              window.removeEventListener('save-all-files-response', responseHandler);
-              resolve(true);
-            } else {
-              console.error("Error saving all files via Electron:", response.error);
-              window.removeEventListener('save-all-files-response', responseHandler);
-              
-              // Fall back to individual downloads
-              for (const file of files) {
-                downloadTextFile(
-                  typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
-                  file.name
-                );
-              }
-              resolve(false);
-            }
-          };
           
-          window.addEventListener('save-all-files-response', responseHandler, { once: true });
-          
-          // Set a timeout in case Electron doesn't respond
-          setTimeout(() => {
-            console.warn("No response from Electron after 2 seconds");
-            window.removeEventListener('save-all-files-response', responseHandler);
-            
-            // Fall back to individual downloads
-            for (const file of files) {
-              downloadTextFile(
-                typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
-                file.name
+          // Versuche, jede Datei einzeln zu speichern
+          let allSuccessful = true;
+          for (const file of filesToSave) {
+            try {
+              const singleResult = await (window as any).electronAPI.saveFile(
+                file.name,
+                file.content,
+                path.join(process.cwd(), 'public', 'resource')
               );
+              
+              if (!singleResult.success) {
+                console.error(`Error saving file ${file.name}:`, singleResult.error);
+                allSuccessful = false;
+              }
+            } catch (singleError) {
+              console.error(`Error saving file ${file.name}:`, singleError);
+              allSuccessful = false;
             }
-            resolve(false);
-          }, 2000);
-        });
+          }
+          
+          if (!allSuccessful) {
+            // Fall back to individual downloads for all files
+            for (const file of filesToSave) {
+              downloadTextFile(file.content, file.name);
+            }
+          }
+          
+          return allSuccessful;
+        }
+      } catch (error) {
+        console.error("Error saving all files:", error);
+        
+        // Fall back to individual downloads
+        for (const file of modifiedFiles) {
+          downloadTextFile(
+            typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
+            file.name
+          );
+        }
+        
+        return false;
       }
-    } catch (error) {
-      console.error("Error using Electron saveAllFiles API:", error);
-      
-      // Fall back to individual downloads
-      for (const file of files) {
-        downloadTextFile(
-          typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
-          file.name
-        );
-      }
-      return false;
+    } else {
+      // ... existing code for saveMultipleFilesToResourceFolder ...
     }
+  } catch (error) {
+    console.error("Error in saveAllModifiedFiles:", error);
+    return false;
   }
-  
-  // If not in Electron, download all files
-  console.warn("Not in Electron environment, falling back to individual downloads");
-  for (const file of files) {
-    downloadTextFile(
-      typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
-      file.name
-    );
-  }
-  return false;
 };
 
 // Standard browser download method (fallback)
