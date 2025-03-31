@@ -401,6 +401,16 @@ export const savePropItemsToFile = async (items: any[]): Promise<boolean> => {
     const modifiedItems = getModifiedItems();
     console.log(`${modifiedItems.length} manuell als modifiziert markierte Items gefunden`);
     
+    // Diagnostisches Logging: zeige die ersten paar modifizierten Items an
+    if (modifiedItems.length > 0) {
+      console.log("Modifizierte Items (die ersten 3):");
+      modifiedItems.slice(0, 3).forEach(item => {
+        console.log(`- Item ID: ${item.id}`);
+        console.log(`  Neuer Name: ${item.displayName}`);
+        console.log(`  Neue Beschreibung: ${item.description?.substring(0, 30)}${item.description?.length > 30 ? '...' : ''}`);
+      });
+    }
+    
     // Stelle sicher, dass alle manuell modifizierten Items berücksichtigt werden
     if (modifiedItems.length > 0) {
       // Für jedes modifizierte Item...
@@ -415,6 +425,9 @@ export const savePropItemsToFile = async (items: any[]): Promise<boolean> => {
           items[itemIndex].displayName = modifiedItem.displayName;
           items[itemIndex].description = modifiedItem.description;
           console.log(`Item ${modifiedItem.id} in items-Array mit Werten aus modifiedItems aktualisiert`);
+          
+          // Protokolliere aktualisierte Werte für Diagnose
+          console.log(`  Name in items-Array nach Update: ${items[itemIndex].displayName}`);
         } else {
           // Wenn das Item nicht gefunden wurde, füge ein temporäres Item hinzu
           console.log(`Item ${modifiedItem.id} nicht im items-Array gefunden, wird als temporäres Item hinzugefügt`);
@@ -435,14 +448,29 @@ export const savePropItemsToFile = async (items: any[]): Promise<boolean> => {
     const { serializePropItemData, saveTextFile, trackModifiedFile } = await import('./fileOperations');
     const content = serializePropItemData(items);
     
+    // Debug: Prüfe den generierten Inhalt
+    console.log(`Serialisierter propItem-Inhalt (Auszug): ${content.substring(0, 200)}...`);
+    
+    // Inspiziere Inhalt auf bestimmte IDs
+    console.log("Suche nach bestimmten IDs im serialisierten Inhalt:");
+    const idsPattern = /IDS_PROPITEM_TXT_\d+\t([^\r\n]+)/g;
+    let match;
+    let matchCount = 0;
+    while ((match = idsPattern.exec(content)) !== null && matchCount < 10) {
+      console.log(`  ${match[0]}`);
+      matchCount++;
+    }
+    
     // Vor dem Speichern beide Dateien als modifiziert markieren
     trackModifiedFile("propItem.txt.txt", content, {
       isSaving: true,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      originalContent: content // Sicherstellen, dass wir den originalen Inhalt behalten
     });
     
     // Speichere in die Datei propItem.txt.txt
     try {
+      console.log("Starte saveTextFile für propItem.txt.txt...");
       const success = await saveTextFile(content, "propItem.txt.txt");
       
       if (success) {
@@ -504,14 +532,27 @@ const saveToResourceFolder = async (content: string, fileName: string): Promise<
     if ((window as any).electronAPI && (window as any).electronAPI.saveFile) {
       console.log("Versuche direktes Speichern über Electron API");
       
+      // Erste Prüfung der Inhalte vor dem Speichern
+      console.log(`Zu speichernder Inhalt für ${fileName} (Auszug): ${content.substring(0, 100)}...`);
+      
+      // Verwende Electron API direkt ohne path.join
       const result = await (window as any).electronAPI.saveFile(
         fileName,
         content,
-        path.join(process.cwd(), 'public', 'resource')
+        'resource' // Der Hauptprozess kümmert sich um die Pfadauflösung
       );
       
       if (result.success) {
         console.log(`Datei ${fileName} erfolgreich gespeichert über Electron API`);
+        
+        // Wichtig: Lösche den Cache der modifizierten Items
+        try {
+          clearModifiedItems();
+          console.log("Cache der modifizierten Items gelöscht");
+        } catch (clearError) {
+          console.warn("Fehler beim Löschen des Cache:", clearError);
+        }
+        
         return true;
       } else {
         console.error(`Fehler beim Speichern über Electron API: ${result.error}`);
@@ -520,7 +561,18 @@ const saveToResourceFolder = async (content: string, fileName: string): Promise<
     
     // Fallback auf den Import der saveTextFile-Funktion
     const { saveTextFile } = await import('./fileOperations');
-    return await saveTextFile(content, fileName);
+    
+    console.log("Verwende Fallback-Methode saveTextFile");
+    const success = await saveTextFile(content, fileName);
+    
+    if (success) {
+      console.log(`${fileName} erfolgreich mit Fallback-Methode gespeichert`);
+      
+      // Auch hier den Cache leeren
+      clearModifiedItems();
+    }
+    
+    return success;
   } catch (error) {
     console.error(`Fehler beim Speichern von ${fileName}:`, error);
     alert(`Fehler beim Speichern von ${fileName}: ${error.message}`);

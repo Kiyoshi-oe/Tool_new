@@ -614,6 +614,21 @@ const ensurePropItemConsistencyAfterSave = (savedFileName: string) => {
       // Wenn wir im Electron-Umfeld sind, versuche, die Datei direkt zu speichern
       if ((window as any).electronAPI) {
         console.log("Using electronAPI.saveFile für propItem.txt.txt");
+        console.log(`propItem.txt.txt Inhalt (Auszug): ${propItemFile.content.substring(0, 100)}...`);
+        
+        // Hiermit können wir den Inhalt der propItem.txt.txt inspizieren und sicherstellen, 
+        // dass er die richtigen Änderungen enthält
+        console.log("Prüfe propItem.txt.txt Inhalt auf Änderungen:");
+        if (typeof propItemFile.content === 'string') {
+          // Finde alle IDS_PROPITEM_TXT Einträge im Inhalt
+          const idsPattern = /IDS_PROPITEM_TXT_\d+\t([^\r\n]+)/g;
+          let match;
+          let matchCount = 0;
+          while ((match = idsPattern.exec(propItemFile.content)) !== null && matchCount < 5) {
+            console.log(`  ${match[0]}`);
+            matchCount++;
+          }
+        }
         
         (window as any).electronAPI.saveFile(
           propItemFile.name, 
@@ -626,12 +641,24 @@ const ensurePropItemConsistencyAfterSave = (savedFileName: string) => {
             
             // Entferne propItem.txt.txt aus der Liste der modifizierten Dateien
             modifiedFiles = modifiedFiles.filter(file => file.name !== propItemFile.name);
+            
+            // Wichtig: Leere auch den Cache der modifizierten Items, um sicherzustellen,
+            // dass sie beim nächsten Speichern nicht wiederverwendet werden
+            try {
+              const { clearModifiedItems } = require('./propItemUtils');
+              clearModifiedItems();
+              console.log("Modifizierte Items-Cache geleert");
+            } catch (clearError) {
+              console.warn("Konnte modifiedItems-Cache nicht leeren:", clearError);
+            }
           } else {
             console.error("Fehler beim Speichern von propItem.txt.txt:", result.error);
+            alert(`Fehler beim Speichern von propItem.txt.txt: ${result.error}`);
           }
         })
         .catch((error: any) => {
           console.error("Fehler beim Speichern von propItem.txt.txt:", error);
+          alert(`Fehler beim Speichern von propItem.txt.txt: ${error.message}`);
         });
       }
     }
@@ -649,6 +676,17 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
       console.log("No modified files to save");
       return true;
     }
+    
+    // Protokolliere alle modifizierten Dateien für bessere Diagnose
+    console.log("Folgende Dateien sind zur Speicherung markiert:");
+    modifiedFiles.forEach(file => {
+      const contentPreview = typeof file.content === 'string' 
+        ? `${file.content.substring(0, 50)}...` 
+        : 'Nicht-String-Inhalt';
+      console.log(`- ${file.name} (${file.content ? (typeof file.content === 'string' ? file.content.length : 'Objekt') : 0} Zeichen)`);
+      console.log(`  Vorschau: ${contentPreview}`);
+      console.log(`  Metadaten: ${JSON.stringify(file.metadata || {})}`);
+    });
     
     // Prüfe, ob Spec_Item.txt und propItem.txt.txt konsistent sind
     const hasSpecItemChanges = modifiedFiles.some(file => 
@@ -689,8 +727,21 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
             if (itemsWithNameChanges.length > 0) {
               console.log(`Found ${itemsWithNameChanges.length} items with potential name/description changes`);
               
+              // Protokolliere die geänderten Items für bessere Diagnose
+              itemsWithNameChanges.slice(0, 3).forEach(item => {
+                console.log(`Geändertes Item: ${item.name || 'Unnamed'}`);
+                console.log(`  ID: ${item.data?.szName || 'Unknown ID'}`);
+                console.log(`  Neuer Name: ${item.displayName || 'Unverändert'}`);
+                if (item.description !== undefined) {
+                  console.log(`  Neue Beschreibung: ${item.description.substring(0, 50)}${item.description.length > 50 ? '...' : ''}`);
+                }
+              });
+              
               // Erstelle PropItem-Änderungen für alle geänderten Items
               const propItemContent = serializePropItemData(itemsWithNameChanges);
+              
+              // Protokolliere den generierten propItem.txt.txt Inhalt
+              console.log(`Generierter propItem.txt.txt Inhalt (Auszug): ${propItemContent.substring(0, 200)}...`);
               
               // Füge propItem.txt.txt zu den zu speichernden Dateien hinzu
               trackModifiedFile("propItem.txt.txt", propItemContent, {
@@ -709,6 +760,7 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
                       item.displayName || '',
                       item.description || ''
                     );
+                    console.log(`Item ${item.data.szName} explizit als geändert markiert`);
                   }
                 }
               } catch (importError) {
@@ -753,6 +805,24 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
         };
       });
       
+      // Vor dem Speichern, Kontrolle des propItem.txt.txt Inhalts
+      const propItemFile = filesToSave.find(file => file.name === 'propItem.txt.txt');
+      if (propItemFile) {
+        console.log(`propItem.txt.txt wird gespeichert mit Inhalt (Auszug): ${propItemFile.content.substring(0, 100)}...`);
+        
+        // Prüfe, ob der Inhalt die erwarteten Änderungen enthält
+        if (typeof propItemFile.content === 'string') {
+          const idsPattern = /IDS_PROPITEM_TXT_\d+\t([^\r\n]+)/g;
+          let match;
+          let matchCount = 0;
+          console.log("Zu speichernde propItem.txt.txt Einträge:");
+          while ((match = idsPattern.exec(propItemFile.content)) !== null && matchCount < 5) {
+            console.log(`  ${match[0]}`);
+            matchCount++;
+          }
+        }
+      }
+      
       try {
         // Übergebe nur die Dateien und das Zielverzeichnis "resource" 
         // (ohne path.join, das gehört in den Hauptprozess)
@@ -785,6 +855,11 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
           let allSuccessful = true;
           for (const file of filesToSave) {
             try {
+              console.log(`Versuche, ${file.name} einzeln zu speichern...`);
+              if (file.name === 'propItem.txt.txt') {
+                console.log(`propItem.txt.txt Inhalt (Auszug): ${file.content.substring(0, 100)}...`);
+              }
+              
               const singleResult = await (window as any).electronAPI.saveFile(
                 file.name,
                 file.content,
@@ -794,6 +869,8 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
               if (!singleResult.success) {
                 console.error(`Error saving file ${file.name}:`, singleResult.error);
                 allSuccessful = false;
+              } else {
+                console.log(`${file.name} erfolgreich gespeichert!`);
               }
             } catch (singleError) {
               console.error(`Error saving file ${file.name}:`, singleError);
@@ -804,6 +881,15 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
           if (allSuccessful) {
             // Leere die modifiedFiles Liste nur bei Erfolg
             modifiedFiles = [];
+            
+            // Nach erfolgreicher Speicherung, leere auch den Cache der modifizierten Items
+            try {
+              const { clearModifiedItems } = require('./propItemUtils');
+              clearModifiedItems();
+              console.log("Cleared modified items cache after individual file saving");
+            } catch (error) {
+              console.warn("Could not clear modified items after individual file saving:", error);
+            }
           }
           
           return allSuccessful;
@@ -821,6 +907,10 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
       
       for (const file of modifiedFiles) {
         try {
+          if (file.name === 'propItem.txt.txt') {
+            console.log(`Speichere propItem.txt.txt mit Inhalt (Auszug): ${typeof file.content === 'string' ? file.content.substring(0, 100) : 'Kein String'}...`);
+          }
+          
           const success = await saveTextFile(
             typeof file.content === 'string' ? file.content : JSON.stringify(file.content),
             file.name
@@ -829,6 +919,8 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
           if (!success) {
             allSuccessful = false;
             console.error(`Error saving file ${file.name}`);
+          } else {
+            console.log(`${file.name} erfolgreich einzeln gespeichert`);
           }
         } catch (error) {
           allSuccessful = false;
@@ -839,6 +931,15 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
       // Nur bei Erfolg die Liste leeren
       if (allSuccessful) {
         modifiedFiles = [];
+        
+        // Nach erfolgreicher Speicherung, leere auch den Cache der modifizierten Items
+        try {
+          const { clearModifiedItems } = require('./propItemUtils');
+          clearModifiedItems();
+          console.log("Cleared modified items cache after individual file saving");
+        } catch (error) {
+          console.warn("Could not clear modified items after individual file saving:", error);
+        }
       }
       
       return allSuccessful;
