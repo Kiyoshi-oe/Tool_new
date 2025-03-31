@@ -32,20 +32,120 @@ function createWindow() {
   if (isDev) {
     const devServerUrl = process.env.ELECTRON_START_URL || process.env.VITE_DEV_SERVER_URL || 'http://localhost:8081';
     console.log('Versuche Dev-Server zu laden:', devServerUrl);
-    mainWindow.loadURL(devServerUrl).catch(err => {
+    
+    // Prüfe, ob der Vite-Server bereits läuft
+    const checkServerRunning = (url, retries = 3) => {
+      return new Promise((resolve) => {
+        const https = url.startsWith('https') ? require('https') : require('http');
+        const urlObj = new URL(url);
+        
+        console.log(`Prüfe, ob Server auf ${url} läuft...`);
+        
+        const req = https.get({
+          hostname: urlObj.hostname,
+          port: urlObj.port,
+          path: '/',
+          timeout: 1000
+        }, (res) => {
+          console.log(`Server antwortet mit Status: ${res.statusCode}`);
+          resolve(res.statusCode >= 200 && res.statusCode < 400);
+        });
+        
+        req.on('error', (error) => {
+          console.log(`Server nicht erreichbar: ${error.message}`);
+          if (retries > 0) {
+            console.log(`Versuche es erneut... (${retries} verbleibend)`);
+            setTimeout(() => {
+              resolve(checkServerRunning(url, retries - 1));
+            }, 1000);
+          } else {
+            resolve(false);
+          }
+        });
+        
+        req.on('timeout', () => {
+          console.log('Server-Verbindung Timeout');
+          req.destroy();
+          if (retries > 0) {
+            console.log(`Versuche es erneut... (${retries} verbleibend)`);
+            setTimeout(() => {
+              resolve(checkServerRunning(url, retries - 1));
+            }, 1000);
+          } else {
+            resolve(false);
+          }
+        });
+      });
+    };
+    
+    // Versuche zuerst zu prüfen, ob der Server läuft
+    checkServerRunning(devServerUrl).then(isRunning => {
+      if (isRunning) {
+        // Server läuft, lade die App
+        mainWindow.loadURL(devServerUrl).catch(err => {
+          handleLoadError(err);
+        });
+      } else {
+        // Server läuft nicht, versuche alternative Ports
+        const alternativePorts = [8080, 3000, 5173];
+        console.log('Server nicht erreichbar, versuche alternative Ports...');
+        
+        const tryAlternativePort = (index) => {
+          if (index >= alternativePorts.length) {
+            console.log('Keine alternativen Ports verfügbar, verwende Fallback...');
+            return handleLoadError(new Error('Kein Server erreichbar'));
+          }
+          
+          const port = alternativePorts[index];
+          const altUrl = `http://localhost:${port}`;
+          console.log(`Versuche alternativen Port: ${port}`);
+          
+          checkServerRunning(altUrl).then(isAltRunning => {
+            if (isAltRunning) {
+              console.log(`Server auf ${altUrl} gefunden!`);
+              mainWindow.loadURL(altUrl).catch(err => {
+                handleLoadError(err);
+              });
+            } else {
+              tryAlternativePort(index + 1);
+            }
+          });
+        };
+        
+        tryAlternativePort(0);
+      }
+    });
+    
+    // Funktion zur Behandlung von Ladefehlern
+    const handleLoadError = (err) => {
       console.error('Fehler beim Laden der URL:', err);
-      // Fallback auf lokale HTML-Datei bei Fehler
+      
+      // Versuche zuerst die lokale index.html zu laden
       const indexPath = path.join(__dirname, '..', 'dist', 'index.html');
       if (fs.existsSync(indexPath)) {
         console.log('Verwende Fallback-HTML-Datei:', indexPath);
         mainWindow.loadFile(indexPath);
       } else {
-        dialog.showErrorBox(
-          'Laden fehlgeschlagen',
-          `Konnte weder Dev-Server noch lokale HTML-Datei laden. URL: ${devServerUrl}, Fehler: ${err.message}`
-        );
+        // Versuche einen alternativen Fallback-Pfad
+        const altIndexPath = path.join(process.cwd(), 'dist', 'index.html');
+        if (fs.existsSync(altIndexPath)) {
+          console.log('Verwende alternativen Fallback-Pfad:', altIndexPath);
+          mainWindow.loadFile(altIndexPath);
+        } else {
+          // Zeige eine Fehlermeldung an, wenn kein Fallback verfügbar ist
+          dialog.showErrorBox(
+            'Laden fehlgeschlagen',
+            `Konnte weder Dev-Server noch lokale HTML-Datei laden. 
+             URL: ${devServerUrl}, 
+             Fehler: ${err.message}
+             
+             Bitte starten Sie den Dev-Server mit 'npm run dev' oder 
+             erstellen Sie eine Build-Version mit 'npm run build'.`
+          );
+        }
       }
-    });
+    };
+    
     // Open DevTools in development mode
     mainWindow.webContents.openDevTools();
   } else {
@@ -98,10 +198,18 @@ function createWindow() {
       let finalPath;
       
       if (savePath) {
-        // If path is relative, make it absolute
-        if (!path.isAbsolute(savePath)) {
+        // Prüfe, ob es sich um einen der Standard-Ordnernamen handelt
+        if (savePath === 'resource' || savePath === 'resources') {
+          finalPath = path.join(app.getAppPath(), 'public', 'resource');
+        } else if (savePath === 'userData') {
+          finalPath = app.getPath('userData');
+        } else if (savePath === 'documents') {
+          finalPath = app.getPath('documents');
+        } else if (!path.isAbsolute(savePath)) {
+          // Wenn es ein relativer Pfad ist, mache ihn absolut
           finalPath = path.join(app.getAppPath(), savePath);
         } else {
+          // Ansonsten verwende den Pfad direkt
           finalPath = savePath;
         }
       } else {
@@ -318,10 +426,18 @@ function createWindow() {
       let finalPath;
       
       if (savePath) {
-        // If path is relative, make it absolute
-        if (!path.isAbsolute(savePath)) {
+        // Prüfe, ob es sich um einen der Standard-Ordnernamen handelt
+        if (savePath === 'resource' || savePath === 'resources') {
+          finalPath = path.join(app.getAppPath(), 'public', 'resource');
+        } else if (savePath === 'userData') {
+          finalPath = app.getPath('userData');
+        } else if (savePath === 'documents') {
+          finalPath = app.getPath('documents');
+        } else if (!path.isAbsolute(savePath)) {
+          // Wenn es ein relativer Pfad ist, mache ihn absolut
           finalPath = path.join(app.getAppPath(), savePath);
         } else {
+          // Ansonsten verwende den Pfad direkt
           finalPath = savePath;
         }
       } else {
@@ -528,6 +644,76 @@ function createWindow() {
       return {
         success: false,
         error: error.message || 'Unknown error loading resource files'
+      };
+    }
+  });
+
+  // Neuer Handler für die Pfadauflösung
+  ipcMain.handle('get-resource-path', async (_, subPath) => {
+    try {
+      console.log(`Electron: Resolving path for ${subPath || 'resource directory'}`);
+      
+      let finalPath;
+      
+      if (subPath) {
+        // Prüfe, ob es sich um einen der Standard-Ordnernamen handelt
+        if (subPath === 'resource' || subPath === 'resources') {
+          finalPath = path.join(app.getAppPath(), 'public', 'resource');
+        } else if (subPath === 'userData') {
+          finalPath = app.getPath('userData');
+        } else if (subPath === 'documents') {
+          finalPath = app.getPath('documents');
+        } else if (!path.isAbsolute(subPath)) {
+          // Wenn es ein relativer Pfad ist, mache ihn absolut
+          finalPath = path.join(app.getAppPath(), subPath);
+        } else {
+          // Ansonsten verwende den Pfad direkt
+          finalPath = subPath;
+        }
+      } else {
+        // Default path is the resource folder in the app
+        finalPath = path.join(app.getAppPath(), 'public', 'resource');
+      }
+      
+      // Prüfe, ob der Pfad existiert, und erstelle ihn, falls nicht
+      if (!fs.existsSync(finalPath)) {
+        fs.mkdirSync(finalPath, { recursive: true });
+        console.log(`Verzeichnis erstellt: ${finalPath}`);
+      }
+      
+      // Prüfe, ob wir Schreibzugriff haben
+      try {
+        fs.accessSync(finalPath, fs.constants.W_OK);
+        console.log(`Schreibrechte für ${finalPath} bestätigt`);
+      } catch (accessError) {
+        console.warn(`Keine Schreibrechte für ${finalPath}`);
+        
+        // Versuche einen alternativen Pfad im Benutzerverzeichnis
+        const altPath = path.join(app.getPath('userData'), subPath || 'resource');
+        
+        if (!fs.existsSync(altPath)) {
+          fs.mkdirSync(altPath, { recursive: true });
+          console.log(`Alternatives Verzeichnis erstellt: ${altPath}`);
+        }
+        
+        finalPath = altPath;
+      }
+      
+      return {
+        success: true,
+        path: finalPath,
+        exists: fs.existsSync(finalPath),
+        writable: true,
+        appPath: app.getAppPath(),
+        platform: process.platform
+      };
+    } catch (error) {
+      console.error('Error resolving resource path:', error);
+      return {
+        success: false,
+        error: error.message || 'Unknown error',
+        appPath: app.getAppPath(),
+        platform: process.platform
       };
     }
   });

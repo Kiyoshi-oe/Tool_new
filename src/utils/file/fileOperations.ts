@@ -501,11 +501,12 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
           // Log content length for debugging
           console.log(`File content length: ${finalContent.length} characters`);
           
-          // Use absolute path for resource folder to avoid path issues
+          // Use the electronAPI to save the file
+          // Wichtig: Wir übergeben nun keinen absoluten Pfad mehr, sondern nur den Zielordner "resource"
           const result = await (window as any).electronAPI.saveFile(
             fileName, 
             finalContent, 
-            path.join(process.cwd(), 'public', 'resource')
+            'resource'  // Der Hauptprozess kümmert sich um die Pfadauflösung
           );
           
           if (result.success) {
@@ -562,7 +563,7 @@ const saveViaElectronEvent = (fileName: string, content: string): Promise<boolea
         detail: { 
           fileName, 
           content: finalContent, 
-          path: path.join(process.cwd(), 'public', 'resource')
+          path: 'resource'  // Der Hauptprozess kümmert sich um die Pfadauflösung
         }
       });
       
@@ -617,7 +618,7 @@ const ensurePropItemConsistencyAfterSave = (savedFileName: string) => {
         (window as any).electronAPI.saveFile(
           propItemFile.name, 
           propItemFile.content, 
-          path.join(process.cwd(), 'public', 'resource')
+          'resource'  // Der Hauptprozess kümmert sich um die Pfadauflösung
         )
         .then((result: any) => {
           if (result.success) {
@@ -753,9 +754,11 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
       });
       
       try {
+        // Übergebe nur die Dateien und das Zielverzeichnis "resource" 
+        // (ohne path.join, das gehört in den Hauptprozess)
         const result = await (window as any).electronAPI.saveAllFiles(
           filesToSave, 
-          path.join(process.cwd(), 'public', 'resource')
+          'resource'
         );
         
         if (result.success) {
@@ -785,7 +788,7 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
               const singleResult = await (window as any).electronAPI.saveFile(
                 file.name,
                 file.content,
-                path.join(process.cwd(), 'public', 'resource')
+                'resource'  // Der Hauptprozess kümmert sich um die Pfadauflösung
               );
               
               if (!singleResult.success) {

@@ -8,15 +8,15 @@ console.log('Preload-Skript wird ausgeführt...');
 contextBridge.exposeInMainWorld(
   'electronAPI', {
     // Save a single file
-    saveFile: (fileName, content, savePath) => {
-      console.log(`Preload: saveFile aufgerufen für ${fileName}`);
-      return ipcRenderer.invoke('save-file', fileName, content, savePath);
+    saveFile: (fileName, content, targetDirectory) => {
+      console.log(`Preload: saveFile aufgerufen für ${fileName} in Verzeichnis ${targetDirectory || 'standard'}`);
+      return ipcRenderer.invoke('save-file', fileName, content, targetDirectory);
     },
     
     // Save multiple files at once
-    saveAllFiles: (files) => {
-      console.log(`Preload: saveAllFiles aufgerufen für ${files.length} Dateien`);
-      return ipcRenderer.invoke('save-all-files', files);
+    saveAllFiles: (files, targetDirectory) => {
+      console.log(`Preload: saveAllFiles aufgerufen für ${files.length} Dateien in Verzeichnis ${targetDirectory || 'standard'}`);
+      return ipcRenderer.invoke('save-all-files', files, targetDirectory);
     },
       
     // Load all resource files
@@ -25,7 +25,11 @@ contextBridge.exposeInMainWorld(
     
     // Listen for save response events
     onSaveFileResponse: (callback) => 
-      ipcRenderer.on('save-file-response', (_, data) => callback(data))
+      ipcRenderer.on('save-file-response', (_, data) => callback(data)),
+    
+    // Neue Funktion: Resolve resource path
+    getResourcePath: (subPath) => 
+      ipcRenderer.invoke('get-resource-path', subPath)
   }
 );
 
@@ -57,8 +61,8 @@ window.addEventListener('save-file', (event) => {
 // Listen for save-all-files events from the DOM
 window.addEventListener('save-all-files', (event) => {
   console.log('save-all-files Event empfangen');
-  const { files } = event.detail;
-  ipcRenderer.invoke('save-all-files', files)
+  const { files, path } = event.detail;
+  ipcRenderer.invoke('save-all-files', files, path)
     .then(result => {
       window.dispatchEvent(new CustomEvent('save-all-files-response', { 
         detail: result 
