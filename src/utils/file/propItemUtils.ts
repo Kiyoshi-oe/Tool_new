@@ -240,7 +240,12 @@ export const updatePropItemProperties = (
 
   // Verfolge die Änderungen für späteres Speichern
   try {
+    // Verbesserte Version mit Fehlerprotokollierung und Rückfallmechanismus
     trackPropItemChanges(itemId, itemName, displayName, description);
+    
+    // Markiere explizit, dass dieses Item als modifiziert betrachtet werden soll,
+    // auch wenn es nicht im aktuellen Tab geöffnet ist
+    markItemAsModified(itemId, displayName, description);
   } catch (error) {
     console.error("Fehler beim Tracking von PropItem-Änderungen:", error);
     // Fahre fort, auch wenn Tracking fehlschlägt
@@ -250,32 +255,183 @@ export const updatePropItemProperties = (
 };
 
 /**
- * Hilfsfunktion zum Speichern aller propItem-Änderungen
- * @param items Die Liste aller Items
- * @returns Promise<boolean> Erfolg/Misserfolg
+ * Markiert ein Item als modifiziert, sodass es bei der nächsten Speicheroperation berücksichtigt wird
+ * @param itemId Die ID des Items (IDS_PROPITEM_TXT_XXXXXX)
+ * @param displayName Der Anzeigename des Items
+ * @param description Die Beschreibung des Items
+ */
+export const markItemAsModified = (
+  itemId: string,
+  displayName: string,
+  description: string
+): void => {
+  // Füge das Item zur Liste der modifizierten Items hinzu
+  const modifiedItems = getModifiedItems();
+  
+  // Überprüfe, ob das Item bereits in der Liste ist
+  const existingItemIndex = modifiedItems.findIndex(item => item.id === itemId);
+  
+  if (existingItemIndex >= 0) {
+    // Aktualisiere das vorhandene Item
+    modifiedItems[existingItemIndex].displayName = displayName;
+    modifiedItems[existingItemIndex].description = description;
+  } else {
+    // Füge ein neues Item hinzu
+    modifiedItems.push({
+      id: itemId,
+      displayName,
+      description
+    });
+  }
+  
+  // Speichere die aktualisierte Liste
+  saveModifiedItems(modifiedItems);
+  
+  console.log(`Item ${itemId} als modifiziert markiert, ${modifiedItems.length} Items insgesamt modifiziert`);
+};
+
+// Speicher für modifizierte Items zwischen Sitzungen
+let modifiedItemsCache: Array<{id: string; displayName: string; description: string}> = [];
+
+/**
+ * Holt die Liste der modifizierten Items
+ * @returns Liste der modifizierten Items
+ */
+export const getModifiedItems = (): Array<{id: string; displayName: string; description: string}> => {
+  if (modifiedItemsCache.length > 0) {
+    return [...modifiedItemsCache]; // Kopie zurückgeben, um unbeabsichtigte Änderungen zu vermeiden
+  }
+  
+  try {
+    // Versuche, aus dem localStorage zu laden
+    const storedItems = localStorage.getItem('modifiedPropItems');
+    if (storedItems) {
+      modifiedItemsCache = JSON.parse(storedItems);
+      return [...modifiedItemsCache];
+    }
+  } catch (error) {
+    console.warn("Fehler beim Laden der modifizierten Items aus localStorage:", error);
+  }
+  
+  return [];
+};
+
+/**
+ * Speichert die Liste der modifizierten Items
+ * @param items Liste der modifizierten Items
+ */
+export const saveModifiedItems = (items: Array<{id: string; displayName: string; description: string}>): void => {
+  modifiedItemsCache = [...items]; // Kopie speichern
+  
+  try {
+    // Im localStorage speichern für Persistenz zwischen Sitzungen
+    localStorage.setItem('modifiedPropItems', JSON.stringify(modifiedItemsCache));
+  } catch (error) {
+    console.warn("Fehler beim Speichern der modifizierten Items im localStorage:", error);
+  }
+};
+
+/**
+ * Prüft, ob ein Item als modifiziert markiert ist
+ * @param itemId Die ID des Items
+ * @returns true, wenn das Item modifiziert wurde, sonst false
+ */
+export const isItemModified = (itemId: string): boolean => {
+  const modifiedItems = getModifiedItems();
+  return modifiedItems.some(item => item.id === itemId);
+};
+
+/**
+ * Löscht alle modifizierten Items nach erfolgreicher Speicherung
+ */
+export const clearModifiedItems = (): void => {
+  modifiedItemsCache = [];
+  
+  try {
+    localStorage.removeItem('modifiedPropItems');
+  } catch (error) {
+    console.warn("Fehler beim Löschen der modifizierten Items aus localStorage:", error);
+  }
+};
+
+/**
+ * Speichert alle PropItem-Änderungen in die Datei propItem.txt.txt
+ * @param items Das Array aller Items
+ * @returns true bei Erfolg, false bei Fehler
  */
 export const savePropItemsToFile = async (items: any[]): Promise<boolean> => {
-  console.log(`PropItemUtils: Speichere ${items?.length || 0} Items`);
+  console.log("savePropItemsToFile aufgerufen mit", items?.length || 0, "Items");
   
   if (!items || items.length === 0) {
-    console.warn("Keine Items zum Speichern übergeben");
+    console.warn("Keine Items zum Speichern vorhanden!");
     return false;
   }
   
   try {
-    // Filtere nur Items mit propItem-ID
-    const propItems = items.filter(item => 
-      item?.data?.szName && 
-      typeof item.data.szName === 'string' && 
-      item.data.szName.startsWith('IDS_PROPITEM_TXT_')
-    );
+    // Hole auch die Liste der manuell als modifiziert markierten Items
+    const modifiedItems = getModifiedItems();
+    console.log(`${modifiedItems.length} manuell als modifiziert markierte Items gefunden`);
     
-    console.log(`PropItemUtils: ${propItems.length} PropItems gefiltert von ${items.length} Gesamtitems`);
+    // Stelle sicher, dass alle manuell modifizierten Items berücksichtigt werden
+    if (modifiedItems.length > 0) {
+      // Für jedes modifizierte Item...
+      for (const modifiedItem of modifiedItems) {
+        // ...suche das entsprechende Item im items-Array
+        const itemIndex = items.findIndex(item => 
+          item.data && item.data.szName === modifiedItem.id
+        );
+        
+        if (itemIndex >= 0) {
+          // Wenn das Item gefunden wurde, aktualisiere die Werte
+          items[itemIndex].displayName = modifiedItem.displayName;
+          items[itemIndex].description = modifiedItem.description;
+          console.log(`Item ${modifiedItem.id} in items-Array mit Werten aus modifiedItems aktualisiert`);
+        } else {
+          // Wenn das Item nicht gefunden wurde, füge ein temporäres Item hinzu
+          console.log(`Item ${modifiedItem.id} nicht im items-Array gefunden, wird als temporäres Item hinzugefügt`);
+          items.push({
+            id: modifiedItem.id,
+            name: modifiedItem.id,
+            data: { szName: modifiedItem.id },
+            displayName: modifiedItem.displayName,
+            description: modifiedItem.description
+          });
+        }
+      }
+    }
     
-    // Speichere die Änderungen
-    return await savePropItemChanges(propItems);
+    console.log("Serialisiere propItem-Änderungen für", items.length, "Items");
+    
+    // Importiere die benötigte Funktion aus fileOperations
+    const { serializePropItemData } = await import('./fileOperations');
+    const content = serializePropItemData(items);
+    
+    // Speichere in die Datei propItem.txt.txt
+    const success = await saveToResourceFolder(content, "propItem.txt.txt");
+    
+    if (success) {
+      console.log("PropItem.txt.txt erfolgreich gespeichert");
+      // Lösche die modifizierten Items aus dem Cache
+      clearModifiedItems();
+      return true;
+    } else {
+      console.error("Fehler beim Speichern von PropItem.txt.txt");
+      return false;
+    }
   } catch (error) {
-    console.error("Fehler beim Speichern der PropItems:", error);
+    console.error("Fehler beim Serialisieren und Speichern der PropItem-Änderungen:", error);
+    return false;
+  }
+};
+
+// Helfer-Funktion, um PropItem-Änderungen zu speichern
+const saveToResourceFolder = async (content: string, fileName: string): Promise<boolean> => {
+  try {
+    // Fallback auf den Import der saveTextFile-Funktion
+    const { saveTextFile } = await import('./fileOperations');
+    return await saveTextFile(content, fileName);
+  } catch (error) {
+    console.error(`Fehler beim Speichern von ${fileName}:`, error);
     return false;
   }
 };

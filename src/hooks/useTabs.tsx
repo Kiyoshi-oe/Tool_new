@@ -1,10 +1,13 @@
-import { useState, useRef, useCallback, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { ResourceItem } from "../types/fileTypes";
+import { getModifiedFiles, saveAllModifiedFiles, ensurePropItemConsistency } from "../utils/file/fileOperations";
+import { toast } from "sonner";
 
 interface TabItem {
   id: string;
   item: ResourceItem;
   isTemporary: boolean;
+  modified: boolean;
 }
 
 // Map für schnellen ID-basierten Zugriff auf Tabs
@@ -68,7 +71,8 @@ export const useTabs = (
       const newTab = { 
         id: item.id, 
         item,
-        isTemporary: !isDoubleClick
+        isTemporary: !isDoubleClick,
+        modified: false
       };
       
       // Cache aktualisieren
@@ -79,27 +83,28 @@ export const useTabs = (
   }, []);
   
   // Performance-Optimierung: updateTabItem mit useCallback memoisieren
-  const updateTabItem = useCallback((updatedItem: ResourceItem) => {
-    if (!updatedItem || !updatedItem.id) return;
+  const updateTabItem = useCallback((item: ResourceItem) => {
+    if (!item || !item.id) return;
     
     // Performance-Optimierung: Prüfen ob der Tab existiert
-    const existingTab = tabCache.get(updatedItem.id);
+    const existingTab = tabCache.get(item.id);
     if (!existingTab) return;
     
     setOpenTabs(prevTabs => {
       // Performance-Optimierung: Direkte Array-Manipulation
       const updatedTabs = [...prevTabs];
-      const tabIndex = updatedTabs.findIndex(tab => tab.id === updatedItem.id);
+      const tabIndex = updatedTabs.findIndex(tab => tab.id === item.id);
       
       if (tabIndex >= 0) {
         const updatedTab = {
           ...updatedTabs[tabIndex],
-          item: updatedItem
+          item,
+          modified: true
         };
         updatedTabs[tabIndex] = updatedTab;
         
         // Cache aktualisieren
-        tabCache.set(updatedItem.id, updatedTab);
+        tabCache.set(item.id, updatedTab);
         
         return updatedTabs;
       }
@@ -163,11 +168,118 @@ export const useTabs = (
     }
   }, [selectedItem, setSelectedItem]);
   
+  // Tab speichern
+  const saveCurrentTab = useCallback((fileData: any) => {
+    // Sicherstellen, dass sowohl Spec_Item.txt als auch propItem.txt.txt aktualisiert werden
+    if (selectedItem && fileData) {
+      ensurePropItemConsistency(fileData);
+      
+      // Anzeige für den Benutzer
+      const modifiedFiles = getModifiedFiles();
+      const specItemModified = modifiedFiles.some(f => f.name.toLowerCase().includes('spec_item'));
+      const propItemModified = modifiedFiles.some(f => f.name.toLowerCase().includes('propitem'));
+      
+      if (specItemModified && propItemModified) {
+        console.log("Beide Dateien (Spec_Item.txt und propItem.txt.txt) werden gespeichert");
+      } else if (specItemModified) {
+        console.log("Nur Spec_Item.txt wird gespeichert");
+      } else if (propItemModified) {
+        console.log("Nur propItem.txt.txt wird gespeichert");
+      }
+      
+      // Speichern
+      toast.promise(saveAllModifiedFiles(), {
+        loading: "Speichere aktuellen Tab...",
+        success: `Tab ${selectedItem.name || selectedItem.id} gespeichert`,
+        error: "Fehler beim Speichern des Tabs"
+      });
+      
+      // Tab als nicht mehr modifiziert markieren nach dem Speichern
+      setOpenTabs(prevTabs => {
+        const tabIndex = prevTabs.findIndex(tab => selectedItem && tab.item.id === selectedItem.id);
+        if (tabIndex === -1) return prevTabs;
+        
+        const updatedTab = {
+          ...prevTabs[tabIndex],
+          modified: false
+        };
+        
+        return [
+          ...prevTabs.slice(0, tabIndex),
+          updatedTab,
+          ...prevTabs.slice(tabIndex + 1)
+        ];
+      });
+      
+      return saveAllModifiedFiles();
+    }
+    
+    return Promise.resolve(false);
+  }, [selectedItem]);
+  
+  // Alle Tabs speichern
+  const saveAllTabs = useCallback((fileData: any) => {
+    // Sicherstellen, dass sowohl Spec_Item.txt als auch propItem.txt.txt aktualisiert werden
+    if (fileData) {
+      ensurePropItemConsistency(fileData);
+    }
+    
+    const modifiedTabsCount = openTabs.filter(tab => tab.modified).length;
+    
+    if (modifiedTabsCount === 0) {
+      toast.info("Keine modifizierten Tabs zum Speichern");
+      return Promise.resolve(false);
+    }
+    
+    // Speichern
+    toast.promise(saveAllModifiedFiles(), {
+      loading: `Speichere ${modifiedTabsCount} modifizierte Tabs...`,
+      success: `${modifiedTabsCount} Tabs gespeichert`,
+      error: "Fehler beim Speichern der Tabs"
+    });
+    
+    // Alle Tabs als nicht mehr modifiziert markieren
+    setOpenTabs(prevTabs => prevTabs.map(tab => ({
+      ...tab,
+      modified: false
+    })));
+    
+    return saveAllModifiedFiles();
+  }, [openTabs]);
+  
   return {
     openTabs,
     addTab,
     updateTabItem,
     handleCloseTab,
-    handleSelectTab
+    handleSelectTab,
+    saveCurrentTab,
+    saveAllTabs
   };
+};
+
+// Funktion zum Speichern aller geöffneten Tabs
+export const saveModifiedTabs = (tabs: any[], fileData: any): Promise<boolean> => {
+  // Prüfe, ob es geänderte Tabs gibt
+  const modifiedTabs = tabs.filter(tab => tab.modified);
+  
+  if (modifiedTabs.length === 0) {
+    console.log("Keine modifizierten Tabs zum Speichern");
+    toast.info("Keine Änderungen zum Speichern vorhanden");
+    return Promise.resolve(false);
+  }
+  
+  // Stelle sicher, dass propItem.txt.txt auch aktualisiert wird, wenn Änderungen an Namen vorliegen
+  if (fileData) {
+    ensurePropItemConsistency(fileData);
+  }
+  
+  // Hinweis anzeigen
+  toast.promise(saveAllModifiedFiles(), {
+    loading: `Speichere ${modifiedTabs.length} modifizierte Tabs...`,
+    success: `${modifiedTabs.length} Tabs erfolgreich gespeichert`,
+    error: "Fehler beim Speichern der Tabs"
+  });
+  
+  return saveAllModifiedFiles();
 };

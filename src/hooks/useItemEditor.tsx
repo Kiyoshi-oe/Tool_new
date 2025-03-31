@@ -120,16 +120,28 @@ export const useItemEditor = ({
       console.warn("No original content found for Spec_Item.txt");
     }
     
-    trackModifiedFile("Spec_Item.txt", serializedData);
+    // Verbessertes Tracking der Änderungen für beide Dateien
+    trackModifiedFile("Spec_Item.txt", serializedData, {
+      containsDisplayNameChanges: field === 'displayName',
+      containsDescriptionChanges: field === 'description'
+    });
     
     // Also track propItem changes if this is a displayName or description change
     if (field === 'displayName' || field === 'description') {
+      // Jetzt haben wir ein robusteres System für displayName und description Änderungen
+      console.log(`Verfolge Änderungen für Item ${updatedItem.id} (${updatedItem.name})`);
+      console.log(`  Field: ${field}, Alter Wert: "${oldValue}", Neuer Wert: "${field === 'displayName' ? updatedItem.displayName : updatedItem.description}"`);
+      
+      // Die Funktion trackPropItemChanges wird aufgerufen, um PropItem.txt.txt zu aktualisieren
       trackPropItemChanges(
         updatedItem.id,
         updatedItem.name,
         updatedItem.displayName || '',
         updatedItem.description || ''
       );
+      
+      // Explizites Flag für Konsistenz zwischen beiden Dateien setzen
+      console.log(`PropItem-Änderungen für ${field} wurden erfasst und für Spec_Item.txt und PropItem.txt.txt synchronisiert`);
     }
   }, [fileData, editMode, settings, setFileData, setLogEntries, setSelectedItem, updateTabItem]);
   

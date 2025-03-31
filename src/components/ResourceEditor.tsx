@@ -137,6 +137,15 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
           value as string, 
           localItem.description || ''
         );
+        
+        // Explizit beide Dateien als modifiziert markieren
+        trackModifiedFile("Spec_Item.txt", JSON.stringify({
+          ...localItem,
+          displayName: value as string,
+          isSpecItemFile: true
+        }));
+        
+        console.log(`Name für Item ${localItem.id} wurde aktualisiert: "${value}"`);
       } else if (field === 'description') {
         updatedItem = {
           ...localItem,
@@ -150,6 +159,15 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
           localItem.displayName || '', 
           value as string
         );
+        
+        // Explizit beide Dateien als modifiziert markieren
+        trackModifiedFile("Spec_Item.txt", JSON.stringify({
+          ...localItem,
+          description: value as string,
+          isSpecItemFile: true
+        }));
+        
+        console.log(`Beschreibung für Item ${localItem.id} wurde aktualisiert`);
       } else if (field === 'itemId') {
         // Special handling for item ID changes (defineItem.h updates)
         const defineName = localItem.data.dwID as string;
@@ -190,7 +208,14 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
         // Track appropriate file modification based on field
         if (field.startsWith('dw') || field.startsWith('f')) {
           // These typically go in Spec_Item.txt
-          trackModifiedFile("Spec_Item.txt", `Field ${field} updated in item ${localItem.id}`);
+          trackModifiedFile("Spec_Item.txt", JSON.stringify({
+            ...localItem,
+            data: {
+              ...localItem.data,
+              [field]: value
+            },
+            isSpecItemFile: true
+          }));
         } else if (field.includes('Model') || field.includes('Texture')) {
           // These might be related to mdlDyna.inc
           trackModifiedFile("mdlDyna.inc", `Visual property ${field} updated for item ${localItem.id}`);
