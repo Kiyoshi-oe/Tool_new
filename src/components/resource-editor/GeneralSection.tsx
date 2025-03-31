@@ -485,7 +485,7 @@ const GeneralSection = ({ localItem, editMode, handleDataChange }: GeneralSectio
             value={itemId}
             onChange={(e) => handleDataChange('itemId', e.target.value)}
             disabled={!editMode}
-            className="form-input text-[#707070]"
+            className="form-input"
             onFocus={() => handleSensitiveFieldFocus('itemId', itemId)}
           />
           <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
@@ -515,7 +515,7 @@ const GeneralSection = ({ localItem, editMode, handleDataChange }: GeneralSectio
         <div className="form-field">
           <label className="form-label">Description</label>
           <Textarea
-            className="form-input resize-none h-10 min-h-[40px] text-[#707070]"
+            className="form-input resize-none h-10 min-h-[40px]"
             value={description}
             onChange={(e) => handleDataChange('description', e.target.value)}
             disabled={!editMode}
@@ -532,7 +532,7 @@ const GeneralSection = ({ localItem, editMode, handleDataChange }: GeneralSectio
           <div className="flex items-center space-x-4">
           <Input
             type="text"
-            className="form-input flex-grow text-[#707070]"
+            className="form-input flex-grow"
             value={cleanedIconName}
             onChange={(e) => handleDataChange('szIcon', e.target.value)}
             disabled={!editMode}
@@ -610,7 +610,7 @@ const GeneralSection = ({ localItem, editMode, handleDataChange }: GeneralSectio
             value={modelFileName}
             onChange={(e) => handleDataChange('modelFileName', e.target.value)}
             disabled={!editMode}
-            className="form-input text-[#707070]"
+            className="form-input"
             onFocus={() => handleSensitiveFieldFocus('modelFileName', modelFileName)}
           />
           <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
@@ -639,85 +639,48 @@ const GeneralSection = ({ localItem, editMode, handleDataChange }: GeneralSectio
           helperText="Maximum stack size: 9999"
         />
         
-        <div className="form-field">
-          <label className="form-label">Item Kind 1</label>
-          <div className="relative">
-            <select
-              className="form-input appearance-none pr-10 text-[#707070]"
-              value={localItem.data.dwItemKind1 as string || ''}
-              onChange={(e) => handleDataChange('dwItemKind1', e.target.value)}
-              disabled={!editMode}
-            >
-              {itemKind1Options.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-          <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-            <Info size={14} />
-            <span>Primary item category (e.g. Weapon, Armor)</span>
-          </p>
-        </div>
+        <FormField
+          id="item-kind-1"
+          label="Item Kind 1"
+          type="select"
+          value={localItem.data.dwItemKind1 as string || ''}
+          onChange={(value) => handleDataChange('dwItemKind1', value)}
+          disabled={!editMode}
+          options={itemKind1Options}
+          helperText="Primary item category (e.g. Weapon, Armor)"
+        />
         
-        <div className="form-field">
-          <label className="form-label">Item Kind 2</label>
-          <div className="relative">
-            <select
-              className="form-input appearance-none pr-10 text-[#707070]"
-              value={localItem.data.dwItemKind2 as string || ''}
-              onChange={(e) => handleDataChange('dwItemKind2', e.target.value)}
-              disabled={!editMode}
-            >
-              {itemKind2Options.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-          <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-            <Info size={14} />
-            <span>Secondary item category</span>
-          </p>
-        </div>
+        <FormField
+          id="item-kind-2"
+          label="Item Kind 2"
+          type="select"
+          value={localItem.data.dwItemKind2 as string || ''}
+          onChange={(value) => handleDataChange('dwItemKind2', value)}
+          disabled={!editMode}
+          options={itemKind2Options}
+          helperText="Secondary item category"
+        />
         
-        <div className="form-field">
-          <label className="form-label">Item Kind 3</label>
-          <div className="relative">
-            <select
-              className="form-input appearance-none pr-10 text-[#707070]"
-              value={localItem.data.dwItemKind3 as string || ''}
-              onChange={(e) => handleDataChange('dwItemKind3', e.target.value)}
-              disabled={!editMode}
-            >
-              {itemKind3Options.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-        </div>
+        <FormField
+          id="item-kind-3"
+          label="Item Kind 3"
+          type="select"
+          value={localItem.data.dwItemKind3 as string || ''}
+          onChange={(value) => handleDataChange('dwItemKind3', value)}
+          disabled={!editMode}
+          options={itemKind3Options}
+        />
         
-        <div className="form-field">
-          <label className="form-label">Job / Class</label>
-          <div className="relative">
-            <select
-              className="form-input appearance-none pr-10 text-[#707070]"
-              value={localItem.data.dwItemJob as string || ''}
-              onChange={(e) => handleDataChange('dwItemJob', e.target.value)}
-              disabled={!editMode}
-            >
-              {jobOptions.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-            <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-            <Info size={14} />
-            <span>Item Job Class</span>
-          </p>
-          </div>
-        </div>
+        <FormField
+          id="item-job"
+          label="Job / Class"
+          type="select"
+          value={localItem.data.dwItemJob as string || ''}
+          onChange={(value) => handleDataChange('dwItemJob', value)}
+          disabled={!editMode}
+          options={jobOptions}
+          helperText="Item Job Class"
+        />
 
         <FormField
           id="required-level"

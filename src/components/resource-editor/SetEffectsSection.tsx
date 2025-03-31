@@ -1,7 +1,6 @@
-
 import { ResourceItem } from "../../types/fileTypes";
-import { ChevronDown } from "lucide-react";
 import { Input } from "../ui/input";
+import { FormField } from "../ui/form-field";
 
 interface SetEffectsSectionProps {
   item: ResourceItem;
@@ -42,16 +41,16 @@ const SetEffectsSection = ({ item }: SetEffectsSectionProps) => {
             {setEffect.effects.map((effect, effectIdx) => (
               <div key={`set-effect-${effectIdx}`} className="flex items-center space-x-2 mb-2">
                 <div className="flex-grow">
-                  <div className="relative">
-                    <select
-                      className="form-input appearance-none pr-10"
-                      value={effect.type}
-                      disabled
-                    >
-                      <option value={effect.type}>{effect.type}</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-                  </div>
+                  <FormField
+                    id={`set-effect-type-${idx}-${effectIdx}`}
+                    label=""
+                    type="select"
+                    value={effect.type}
+                    disabled={true}
+                    options={[{ value: effect.type, label: effect.type }]}
+                    className="mt-0"
+                    onChange={() => {}}
+                  />
                 </div>
                 <div className="w-24">
                   <Input

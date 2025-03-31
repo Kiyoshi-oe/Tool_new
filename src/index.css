@@ -183,7 +183,7 @@ html, body, button, input, select, textarea, a {
 .form-input {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  background-color: #707070;
+  background-color: #2D2D30;
   color: #ffffff;
   border: 1px solid #4a5568;
   border-radius: 0.25rem;
@@ -198,6 +198,7 @@ html, body, button, input, select, textarea, a {
 .form-input:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+  background-color: #2D2D30;
 }
 
 .form-radio {
@@ -251,15 +252,138 @@ input[type="number"],
 input[type="email"],
 input[type="password"],
 input[type="search"],
-textarea {
-  background-color: #707070;
+textarea,
+input[type="text"]:disabled,
+input[type="number"]:disabled,
+input[type="email"]:disabled,
+input[type="password"]:disabled,
+input[type="search"]:disabled,
+textarea:disabled,
+select:disabled {
+  background-color: #2D2D30;
   color: #FFFFFF;
 }
 
 /* Select field styles */
 select {
-  background-color: #707070;
+  background-color: #2D2D30;
   color: #FFFFFF;
+}
+
+/* Ensure all arrows in select dropdowns are centered */
+[class*="ChevronDown"] {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Fix for dropdown arrows alignment specifically */
+.relative svg[class*="ChevronDown"],
+[class*="SelectPrimitive"] [class*="ChevronDown"] {
+  height: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  margin: auto !important;
+}
+
+/* Special fix class for arrow centering */
+.arrow-center-fix svg {
+  position: absolute !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  right: 12px !important;
+  height: 16px !important;
+  width: 16px !important;
+  pointer-events: none !important;
+}
+
+/* Select Trigger specific arrow fix */
+[data-radix-select-trigger] svg {
+  position: absolute !important; 
+  right: 12px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  margin: 0 !important;
+  height: 16px !important;
+  width: 16px !important;
+}
+
+/* Button with ChevronDown icon fixes */
+button svg[class*="ChevronDown"] {
+  display: inline-flex !important;
+  vertical-align: middle !important;
+  margin-left: 4px !important;
+  margin-right: 0 !important;
+}
+
+/* Fix for dropdown menu chevrons */
+[data-radix-dropdown-menu-trigger] svg[class*="ChevronDown"] {
+  display: inline-flex !important;
+  vertical-align: middle !important;
+  margin-left: 4px !important;
+}
+
+/* Slider styling improvements */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 10px;
+  height: 8px;
+  background: #2D2D30;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #007BFF;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #007BFF;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+}
+
+input[type="range"]:focus {
+  outline: none;
+}
+
+input[type="range"]:hover::-webkit-slider-thumb {
+  background: #0069d9;
+}
+
+input[type="range"]:hover::-moz-range-thumb {
+  background: #0069d9;
+}
+
+input[type="range"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Native select arrow fix */
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 1em;
+  padding-right: 2.5rem;
 }
 
 /* Placeholder styling */

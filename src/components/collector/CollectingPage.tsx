@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
 import CollectorTab from "./CollectorTab";
 import { Button } from "../ui/button";
-import { Upload, Save } from "lucide-react";
+import { Upload, Save, Eye, Edit } from "lucide-react";
 import { toast } from "sonner";
 
 interface CollectingPageProps {
   onLoadResourceFile?: () => void; // Callback for the "Load Resource File" button
+  editMode?: boolean; // Add editMode prop
+  onToggleEditMode?: () => void; // Add toggle function prop
 }
 
 // Erweitere den FC Typ mit der hideSidebar-Eigenschaft
@@ -13,10 +15,24 @@ interface CollectingPageComponent extends React.FC<CollectingPageProps> {
   hideSidebar?: boolean;
 }
 
+// Füge die TypeScript-Definition für window.electron hinzu
+declare global {
+  interface Window {
+    electron: {
+      openFileDialog: (options: any) => Promise<{ canceled: boolean, filePaths: string[] }>;
+      readTextFile: (filePath: string) => Promise<{ content: string, error?: string }>;
+      saveTextFile: (filePath: string, content: string) => Promise<{ success: boolean, error?: string }>;
+    };
+  }
+}
+
 // Komponente markiert, dass die Sidebar versteckt werden soll
-const CollectingPage: CollectingPageComponent = ({ onLoadResourceFile }) => {
+const CollectingPage: CollectingPageComponent = ({ onLoadResourceFile, editMode = false, onToggleEditMode }) => {
   const [sContent, setSContent] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const [sTxtPath, setSTxtPath] = useState<string>("");
   
   // Die hideSidebar-Eigenschaft, die von der Layout-Komponente erkannt wird
   CollectingPage.hideSidebar = true;
@@ -122,63 +138,121 @@ Collecting_PremiumStatusItem
   // Load the s.txt file
   const loadSFile = async () => {
     setIsLoading(true);
+  
     try {
-      // Since we don't have direct access to the file,
-      // we use an example s.txt structure
-      
-      // For a real integration, the Electron API 
-      // would need to be made available in the application
-      const exampleContent = generateDefaultSContent();
-      
-      setTimeout(() => {
-        setSContent(exampleContent);
-        toast.success("Example data for s.txt loaded");
+      // Prüfe, ob die Electron API verfügbar ist
+      if (!window.electron) {
+        console.error("Electron API ist nicht verfügbar");
+        toast.error("Electron API ist nicht verfügbar - Dateioperationen werden nicht funktionieren");
         setIsLoading(false);
-      }, 800); // Short delay for better UX
+        
+        // Verwende den Beispielinhalt als Fallback
+        setSContent(generateDefaultSContent());
+        return;
+      }
+      
+      // Öffne den Dateiauswahldialog, um die s.txt Datei auszuwählen
+      const result = await window.electron.openFileDialog({
+        title: "Select s.txt file",
+        defaultPath: "",
+        filters: [
+          { name: "Text Files", extensions: ["txt"] }
+        ],
+        properties: ["openFile"]
+      });
+      
+      if (result.canceled || result.filePaths.length === 0) {
+        setIsLoading(false);
+        return;
+      }
+      
+      const filePath = result.filePaths[0];
+      setSTxtPath(filePath); // Speichere den Pfad zur s.txt Datei
+      
+      // Lese den Inhalt der s.txt Datei
+      const fileResult = await window.electron.readTextFile(filePath);
+      
+      if (fileResult.error) {
+        toast.error(`Error reading file: ${fileResult.error}`);
+        setIsLoading(false);
+        return;
+      }
+      
+      setSContent(fileResult.content);
+      toast.success(`s.txt file loaded: ${filePath}`);
+      setUnsavedChanges(false);
     } catch (error) {
       console.error("Error loading s.txt file:", error);
       toast.error("Error loading s.txt file");
+      
+      // Verwende den Beispielinhalt als Fallback
+      setSContent(generateDefaultSContent());
+    } finally {
       setIsLoading(false);
     }
   };
   
   // Save the s.txt file
-  const saveSFile = async (content: string) => {
-    setIsLoading(true);
+  const handleSave = async (content: string) => {
+    if (!sTxtPath) return;
+    
+    // Prüfe, ob die Electron API verfügbar ist
+    if (!window.electron) {
+      console.error("Electron API ist nicht verfügbar");
+      toast.error("Electron API ist nicht verfügbar - Dateioperationen werden nicht funktionieren");
+      return;
+    }
+    
+    setIsSaving(true);
+    
     try {
-      // In the full implementation, the file content
-      // would actually be saved here
-      console.log("Content to save:", content);
+      // Speichere die Änderungen in die s.txt-Datei
+      const result = await window.electron.saveTextFile(sTxtPath, content);
       
-      // Simulate saving process
-      setTimeout(() => {
-        toast.success("Changes saved (Simulation)");
-        setIsLoading(false);
-      }, 800);
+      if (result.success) {
+        toast.success("s.txt erfolgreich gespeichert");
+        setUnsavedChanges(false);
+      } else {
+        toast.error(`Fehler beim Speichern: ${result.error}`);
+      }
     } catch (error) {
-      console.error("Error saving s.txt file:", error);
-      toast.error("Error saving s.txt file");
-      setIsLoading(false);
+      console.error("Error saving s.txt:", error);
+      toast.error("Fehler beim Speichern der s.txt-Datei");
+    } finally {
+      setIsSaving(false);
     }
-  };
-  
-  // When onLoadResourceFile is provided, also call loadSFile
-  const handleLoadResourceFile = () => {
-    if (onLoadResourceFile) {
-      onLoadResourceFile(); // Call the original onLoadResourceFile
-    }
-    loadSFile(); // Also load the s.txt file
   };
   
   // Load the file automatically on first load
   useEffect(() => {
-    loadSFile();
+    // Prüfe, ob die Electron API verfügbar ist
+    if (typeof window !== 'undefined' && window.electron) {
+      // Automatisch die Datei laden
+      loadSFile();
+    } else {
+      console.warn("Electron API ist nicht verfügbar - Verwende Beispieldaten");
+      setIsLoading(false);
+      setSContent(generateDefaultSContent());
+    }
   }, []);
+  
+  // Wenn der Komponente als Mount geladen wird oder der Tab gewechselt wird, lade die Datei
+  useEffect(() => {
+    // Wir können dem onLoadResourceFile-Callback vertrauen, um zu wissen, wann der Tab aktiviert wurde
+    if (onLoadResourceFile && typeof window !== 'undefined' && window.electron) {
+      loadSFile(); // Die s.txt Datei sofort laden, wenn die Komponente angezeigt wird
+    } else if (onLoadResourceFile) {
+      // Wenn die Electron API nicht verfügbar ist, verwende Beispielinhalt
+      if (!sContent) {
+        setSContent(generateDefaultSContent());
+      }
+    }
+  }, [onLoadResourceFile]);
   
   return (
     <div className="collecting-page">
       <div className="flex justify-between mb-6">
-        <h2 className="text-2xl font-bold text-cyrus-gold">Collector System</h2>
+        {/* Edit Mode Toggle Button wurde entfernt, da er bereits in der Navigationsleiste verfügbar ist */}
       </div>
       
       {isLoading ? (
@@ -189,12 +263,13 @@ Collecting_PremiumStatusItem
         sContent ? (
           <CollectorTab 
             fileContent={sContent}
-            onSave={saveSFile}
+            onSave={handleSave}
+            editMode={editMode} // Pass editMode to CollectorTab
           />
         ) : (
           <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
             <p className="mb-4">No s.txt file loaded</p>
-            <Button onClick={handleLoadResourceFile} variant="outline" className="flex items-center bg-cyrus-blue hover:bg-cyrus-blue/90 text-white">
+            <Button onClick={loadSFile} variant="outline" className="flex items-center bg-cyrus-blue hover:bg-cyrus-blue/90 text-white">
               <Upload className="mr-2 h-4 w-4" />
               Load File
             </Button>

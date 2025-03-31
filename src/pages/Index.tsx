@@ -377,7 +377,11 @@ const Index = () => {
             
             {currentTab === "Collecting" ? (
               <div className="flex-1 overflow-auto">
-                <CollectingPage onLoadResourceFile={() => handleShowFileUpload('header')} />
+                <CollectingPage 
+                  onLoadResourceFile={() => handleShowFileUpload('header')} 
+                  editMode={editMode}
+                  onToggleEditMode={handleToggleEditMode}
+                />
               </div>
             ) : (
               <MainContent 

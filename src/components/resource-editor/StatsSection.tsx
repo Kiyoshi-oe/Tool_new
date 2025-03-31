@@ -1,8 +1,7 @@
-
 import { ResourceItem, EffectData } from "../../types/fileTypes";
-import { ChevronDown } from "lucide-react";
 import { Input } from "../ui/input";
 import { effectTypes } from "../../utils/resourceEditorUtils";
+import { FormField } from "../ui/form-field";
 
 interface StatsSectionProps {
   localItem: ResourceItem;
@@ -20,20 +19,16 @@ const StatsSection = ({ localItem, editMode, handleEffectChange }: StatsSectionP
           <div key={`effect-${index}`} className="form-field flex items-center space-x-2">
             <div className="flex-grow">
               <label className="form-label">Effect {index + 1}</label>
-              <div className="relative">
-                <select
-                  className="form-input appearance-none pr-10"
-                  value={localItem.effects[index]?.type || '-'}
-                  onChange={(e) => handleEffectChange(index, 'type', e.target.value)}
-                  disabled={!editMode}
-                >
-                  <option value="-">-</option>
-                  {effectTypes.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-              </div>
+              <FormField
+                id={`effect-type-${index}`}
+                label=""
+                type="select"
+                value={localItem.effects[index]?.type || '-'}
+                onChange={(value) => handleEffectChange(index, 'type', value)}
+                disabled={!editMode}
+                options={['-', ...effectTypes]}
+                className="mt-0"
+              />
             </div>
             <div className="w-24">
               <label className="form-label">&nbsp;</label>

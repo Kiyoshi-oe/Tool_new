@@ -1,4 +1,3 @@
-
 import { toast } from "sonner";
 import { trackModifiedFile } from "./fileOperations";
 
@@ -125,18 +124,64 @@ export const loadDefineItemFile = async (): Promise<void> => {
   try {
     console.log("Loading defineItem.h file from public folder...");
     
-    const response = await fetch('/resource/defineItem.h');
+    // Bessere Fehlermeldung und mehrere Pfade probieren
+    let response;
+    let paths = [
+      '/resource/defineItem.h',  // Korrigierter Pfad ohne 'public'
+      './resource/defineItem.h'
+    ];
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
+    console.log("Versuche defineItem.h zu laden mit folgenden Pfaden:", paths);
+    
+    let content = null;
+    let loadedPath = null;
+    
+    // Versuche alle Pfade nacheinander
+    for (const path of paths) {
+      try {
+        console.log(`Versuche Pfad: ${path}`);
+        response = await fetch(path);
+        
+        if (response.ok) {
+          console.log(`Erfolgreich geladen von: ${path}`);
+          content = await response.text();
+          loadedPath = path;
+          break;
+        } else {
+          console.warn(`Konnte defineItem.h nicht von ${path} laden, Status: ${response.status}`);
+        }
+      } catch (fetchError) {
+        console.warn(`Fehler beim Laden von ${path}:`, fetchError);
+      }
     }
     
-    const content = await response.text();
-    console.log("defineItem.h loaded successfully, content length:", content.length);
+    if (!content) {
+      // Wenn keine der Pfade funktioniert hat, probieren wir Electron API
+      if ((window as any).electronAPI) {
+        try {
+          console.log("Versuche Laden über Electron API");
+          const result = await (window as any).electronAPI.loadAllFiles();
+          
+          if (result.success && result.files && result.files["defineItem.h"]) {
+            console.log("defineItem.h über Electron API geladen");
+            content = result.files["defineItem.h"];
+            loadedPath = "electron-api";
+          }
+        } catch (electronError) {
+          console.error("Fehler beim Laden über Electron API:", electronError);
+        }
+      }
+    }
+    
+    if (!content) {
+      throw new Error(`Konnte defineItem.h über keinen Pfad laden`);
+    }
+    
+    console.log(`defineItem.h erfolgreich von ${loadedPath} geladen, Inhaltslänge:`, content.length);
     
     parseDefineItemFile(content);
   } catch (error) {
     console.error("Error loading defineItem.h file:", error);
-    toast.error("Failed to load defineItem.h file");
+    toast.error("Fehler beim Laden der defineItem.h Datei");
   }
 };

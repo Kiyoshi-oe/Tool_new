@@ -37,50 +37,38 @@ const PropertiesSection = ({ localItem, editMode, handleDataChange }: Properties
           helperText="Maximum number of times the item can be repaired"
         />
         
-        <div className="form-field">
-          <label className="form-label">Handed</label>
-          <div className="relative">
-            <select
-              className="form-input appearance-none pr-10"
-              value={localItem.data.dwHanded as string || ''}
-              onChange={(e) => handleDataChange('dwHanded', e.target.value)}
-              disabled={!editMode}
-            >
-              <option value="HD_ONE">One Hand</option>
-              <option value="HD_TWO">Two Hand</option>
-            </select>
-            <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-          <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-            <Info size={14} />
-            <span>Whether the item is one-handed or two-handed</span>
-          </p>
-        </div>
+        <FormField
+          id="handed"
+          label="Handed"
+          type="select"
+          value={localItem.data.dwHanded as string || ''}
+          onChange={(value) => handleDataChange('dwHanded', value)}
+          disabled={!editMode}
+          options={[
+            { value: "HD_ONE", label: "One Hand" },
+            { value: "HD_TWO", label: "Two Hand" }
+          ]}
+          helperText="Whether the item is one-handed or two-handed"
+        />
         
-        <div className="form-field">
-          <label className="form-label">Parts</label>
-          <div className="relative">
-            <select
-              className="form-input appearance-none pr-10"
-              value={localItem.data.dwParts as string || ''}
-              onChange={(e) => handleDataChange('dwParts', e.target.value)}
-              disabled={!editMode}
-            >
-              <option value="PARTS_RWEAPON">Right Weapon</option>
-              <option value="PARTS_LWEAPON">Left Weapon</option>
-              <option value="PARTS_HEAD">Head</option>
-              <option value="PARTS_UPPER">Upper Body</option>
-              <option value="PARTS_LOWER">Lower Body</option>
-              <option value="PARTS_HAND">Hands</option>
-              <option value="PARTS_FOOT">Feet</option>
-            </select>
-            <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-          <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-            <Info size={14} />
-            <span>Body part where the item is equipped</span>
-          </p>
-        </div>
+        <FormField
+          id="parts"
+          label="Parts"
+          type="select"
+          value={localItem.data.dwParts as string || ''}
+          onChange={(value) => handleDataChange('dwParts', value)}
+          disabled={!editMode}
+          options={[
+            { value: "PARTS_RWEAPON", label: "Right Weapon" },
+            { value: "PARTS_LWEAPON", label: "Left Weapon" },
+            { value: "PARTS_HEAD", label: "Head" },
+            { value: "PARTS_UPPER", label: "Upper Body" },
+            { value: "PARTS_LOWER", label: "Lower Body" },
+            { value: "PARTS_HAND", label: "Hands" },
+            { value: "PARTS_FOOT", label: "Feet" }
+          ]}
+          helperText="Body part where the item is equipped"
+        />
         
         <FormField
           id="item-level"

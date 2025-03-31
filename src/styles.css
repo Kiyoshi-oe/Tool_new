@@ -1,0 +1,54 @@
+/* Globale Stile für die Select-Elemente */
+select.select-no-arrow {
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  background-image: none !important;
+}
+
+select.select-no-arrow::-ms-expand {
+  display: none !important;
+}
+
+.select-wrapper select {
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  background-image: none !important;
+}
+
+/* Verstecke den nativen Pfeil in allen Browsern */
+@-moz-document url-prefix() {
+  .select-wrapper select {
+    text-indent: 0.01px;
+    text-overflow: '';
+    padding-right: 1em;
+  }
+}
+
+/* Für WebKit-Browser */
+.select-wrapper select::-webkit-outer-spin-button,
+.select-wrapper select::-webkit-inner-spin-button,
+.select-wrapper select::-webkit-search-decoration,
+.select-wrapper select::-webkit-search-cancel-button,
+.select-wrapper select::-webkit-search-results-button,
+.select-wrapper select::-webkit-search-results-decoration,
+.select-wrapper select::-webkit-calendar-picker-indicator {
+  -webkit-appearance: none !important;
+  margin: 0;
+  display: none !important;
+}
+
+/* Für IE10+ */
+.select-wrapper select::-ms-expand {
+  display: none !important;
+}
+
+/* Benutzerdefinierter Pfeil für die Select-Elemente */
+.select-wrapper {
+  position: relative;
+}
+
+.select-wrapper::after {
+  display: none; /* Vermeide doppelte Pfeile */
+} 

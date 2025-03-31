@@ -1,4 +1,5 @@
 import { setPropItemMappings } from './parseUtils';
+import { trackPropItemChanges, savePropItemChanges } from './fileOperations';
 
 // Interface for propItem data mapping
 interface PropItemMapping {
@@ -186,4 +187,95 @@ export const parsePropItemFile = (content: string): PropItemMapping => {
   // Cache the mappings for future use
   setPropItemMappings(mappings);
   return mappings;
+};
+
+/**
+ * Aktualisiert die Eigenschaften eines propItem-Eintrags
+ * @param item Das zu aktualisierende Item
+ * @param displayName Der neue Anzeigename
+ * @param description Die neue Beschreibung
+ * @returns Das aktualisierte Item
+ */
+export const updatePropItemProperties = (
+  item: any,
+  displayName: string,
+  description: string
+): any => {
+  if (!item || !item.data || !item.data.szName) {
+    console.error("Ungültiges Item für UpdatePropItemProperties:", item);
+    throw new Error("Item enthält keine gültige szName-Eigenschaft");
+  }
+
+  const itemId = item.data.szName;
+  const itemName = item.name || "Unknown Item";
+
+  console.log(`PropItemUtils: Aktualisiere Item ${itemName} (${itemId})`);
+  console.log(`  Neuer Name: "${displayName}"`);
+  console.log(`  Neue Beschreibung: "${description.substring(0, 30)}${description.length > 30 ? '...' : ''}"`);
+
+  // Format-Check für ID
+  if (!itemId.match(/IDS_PROPITEM_TXT_\d+/)) {
+    console.error(`Ungültiges ID-Format: ${itemId}`);
+  }
+
+  // Stelle sicher, dass die ID korrekt formatiert ist
+  const idMatch = itemId.match(/IDS_PROPITEM_TXT_(\d+)/);
+  if (idMatch) {
+    const baseId = parseInt(idMatch[1], 10);
+    if (!isNaN(baseId)) {
+      const paddedId = baseId.toString().padStart(6, '0');
+      const expectedId = `IDS_PROPITEM_TXT_${paddedId}`;
+      if (itemId !== expectedId) {
+        console.warn(`ID Format könnte Probleme verursachen: ${itemId} vs erwartet ${expectedId}`);
+      }
+    }
+  }
+
+  // Aktualisiere die lokalen Item-Eigenschaften
+  const updatedItem = {
+    ...item,
+    displayName,
+    description
+  };
+
+  // Verfolge die Änderungen für späteres Speichern
+  try {
+    trackPropItemChanges(itemId, itemName, displayName, description);
+  } catch (error) {
+    console.error("Fehler beim Tracking von PropItem-Änderungen:", error);
+    // Fahre fort, auch wenn Tracking fehlschlägt
+  }
+
+  return updatedItem;
+};
+
+/**
+ * Hilfsfunktion zum Speichern aller propItem-Änderungen
+ * @param items Die Liste aller Items
+ * @returns Promise<boolean> Erfolg/Misserfolg
+ */
+export const savePropItemsToFile = async (items: any[]): Promise<boolean> => {
+  console.log(`PropItemUtils: Speichere ${items?.length || 0} Items`);
+  
+  if (!items || items.length === 0) {
+    console.warn("Keine Items zum Speichern übergeben");
+    return false;
+  }
+  
+  try {
+    // Filtere nur Items mit propItem-ID
+    const propItems = items.filter(item => 
+      item?.data?.szName && 
+      typeof item.data.szName === 'string' && 
+      item.data.szName.startsWith('IDS_PROPITEM_TXT_')
+    );
+    
+    console.log(`PropItemUtils: ${propItems.length} PropItems gefiltert von ${items.length} Gesamtitems`);
+    
+    // Speichere die Änderungen
+    return await savePropItemChanges(propItems);
+  } catch (error) {
+    console.error("Fehler beim Speichern der PropItems:", error);
+    return false;
+  }
 };

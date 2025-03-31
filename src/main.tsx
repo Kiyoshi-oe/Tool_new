@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
+import './styles.css'
 
 // Hilfsfunktion zur Erkennung bestimmter Fehlertypen
 const isModuleLoadingError = (message: string = '') => {

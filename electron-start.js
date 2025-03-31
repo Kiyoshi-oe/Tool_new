@@ -1,4 +1,4 @@
-
+// @ts-ignore
 const { spawn } = require('child_process');
 const { platform } = require('os');
 const fs = require('fs');

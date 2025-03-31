@@ -1,8 +1,7 @@
-
 import { ResourceItem } from "../../types/fileTypes";
-import { ChevronDown } from "lucide-react";
 import { Input } from "../ui/input";
 import { attackStyleOptions, weaponTypeOptions } from "../../utils/resourceEditorUtils";
+import { FormField } from "../ui/form-field";
 
 interface WeaponPropertiesSectionProps {
   localItem: ResourceItem;
@@ -41,56 +40,35 @@ const WeaponPropertiesSection = ({ localItem, editMode, handleDataChange }: Weap
           />
         </div>
         
-        <div className="form-field">
-          <label className="form-label">Attack Style 1</label>
-          <div className="relative">
-            <select
-              className="form-input appearance-none pr-10"
-              value={localItem.data.dwItemAtkOrder1 as string || ''}
-              onChange={(e) => handleDataChange('dwItemAtkOrder1', e.target.value)}
-              disabled={!editMode}
-            >
-              {attackStyleOptions.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-        </div>
+        <FormField
+          id="attack-style-1"
+          label="Attack Style 1"
+          type="select"
+          value={localItem.data.dwItemAtkOrder1 as string || ''}
+          onChange={(value) => handleDataChange('dwItemAtkOrder1', value)}
+          disabled={!editMode}
+          options={attackStyleOptions}
+        />
         
-        <div className="form-field">
-          <label className="form-label">Attack Style 2</label>
-          <div className="relative">
-            <select
-              className="form-input appearance-none pr-10"
-              value={localItem.data.dwItemAtkOrder2 as string || ''}
-              onChange={(e) => handleDataChange('dwItemAtkOrder2', e.target.value)}
-              disabled={!editMode}
-            >
-              {attackStyleOptions.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-        </div>
+        <FormField
+          id="attack-style-2"
+          label="Attack Style 2"
+          type="select"
+          value={localItem.data.dwItemAtkOrder2 as string || ''}
+          onChange={(value) => handleDataChange('dwItemAtkOrder2', value)}
+          disabled={!editMode}
+          options={attackStyleOptions}
+        />
         
-        <div className="form-field">
-          <label className="form-label">Weapon Type</label>
-          <div className="relative">
-            <select
-              className="form-input appearance-none pr-10"
-              value={localItem.data.dwWeaponType as string || ''}
-              onChange={(e) => handleDataChange('dwWeaponType', e.target.value)}
-              disabled={!editMode}
-            >
-              {weaponTypeOptions.map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-        </div>
+        <FormField
+          id="weapon-type"
+          label="Weapon Type"
+          type="select"
+          value={localItem.data.dwWeaponType as string || ''}
+          onChange={(value) => handleDataChange('dwWeaponType', value)}
+          disabled={!editMode}
+          options={weaponTypeOptions}
+        />
         
         <div className="form-field">
           <label className="form-label">Hit Rate Adjustment</label>

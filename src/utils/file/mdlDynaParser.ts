@@ -337,22 +337,65 @@ export const loadMdlDynaFile = async (): Promise<void> => {
   try {
     console.log("Loading mdlDyna.inc file from public folder...");
     
-    const response = await fetch('/resource/mdlDyna.inc');
+    // Bessere Fehlermeldung und mehrere Pfade probieren
+    let response;
+    let paths = [
+      '/resource/mdlDyna.inc',  // Korrigierter Pfad ohne 'public'
+      './resource/mdlDyna.inc'
+    ];
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
+    console.log("Versuche mdlDyna.inc zu laden mit folgenden Pfaden:", paths);
+    
+    let content = null;
+    let loadedPath = null;
+    
+    // Versuche alle Pfade nacheinander
+    for (const path of paths) {
+      try {
+        console.log(`Versuche Pfad: ${path}`);
+        response = await fetch(path);
+        
+        if (response.ok) {
+          console.log(`Erfolgreich geladen von: ${path}`);
+          content = await response.text();
+          loadedPath = path;
+          break;
+        } else {
+          console.warn(`Konnte mdlDyna.inc nicht von ${path} laden, Status: ${response.status}`);
+        }
+      } catch (fetchError) {
+        console.warn(`Fehler beim Laden von ${path}:`, fetchError);
+      }
     }
     
-    const content = await response.text();
-    console.log("mdlDyna.inc loaded successfully, content length:", content.length);
+    if (!content) {
+      // Wenn keine der Pfade funktioniert hat, probieren wir Electron API
+      if ((window as any).electronAPI) {
+        try {
+          console.log("Versuche Laden über Electron API");
+          const result = await (window as any).electronAPI.loadAllFiles();
+          
+          if (result.success && result.files && result.files["mdlDyna.inc"]) {
+            console.log("mdlDyna.inc über Electron API geladen");
+            content = result.files["mdlDyna.inc"];
+            loadedPath = "electron-api";
+          }
+        } catch (electronError) {
+          console.error("Fehler beim Laden über Electron API:", electronError);
+        }
+      }
+    }
     
-    // Debug: Print a few sample lines from the mdlDyna.inc file that contain armor items
-    debugArmorEntries(content);
+    if (!content) {
+      throw new Error(`Konnte mdlDyna.inc über keinen Pfad laden`);
+    }
+    
+    console.log(`mdlDyna.inc erfolgreich von ${loadedPath} geladen, Inhaltslänge:`, content.length);
     
     parseMdlDynaFile(content);
   } catch (error) {
     console.error("Error loading mdlDyna.inc file:", error);
-    toast.error("Failed to load mdlDyna.inc file. This file might not exist in the public folder.");
+    toast.error("Fehler beim Laden der mdlDyna.inc-Datei");
   }
 };
 

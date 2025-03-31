@@ -1,0 +1,119 @@
+/* Dark Mode Input Styling */
+input[type="number"],
+input[type="range"] {
+  background-color: #2D2D30;
+  color: #e5e7eb;
+  border: 1px solid #374151;
+  border-radius: 0.25rem;
+}
+
+/* Custom styling for number inputs */
+input[type="number"] {
+  background-color: #2D2D30;
+  color: #e5e7eb;
+  border: 1px solid #374151;
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+}
+
+input[type="number"]:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.25);
+}
+
+/* Style the number input arrows */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+  background-color: #374151;
+  border-left: 1px solid #4b5563;
+  height: 100%;
+  margin-right: 0.5rem;
+}
+
+/* Range input styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  height: 0.5rem;
+  background: #374151;
+  border-radius: 0.25rem;
+  margin: 0.5rem 0;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 1rem;
+  height: 1rem;
+  background: #4f46e5;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  background: #6366f1;
+}
+
+/* Custom dark mode class */
+.dark-mode-number-input {
+  background-color: #2D2D30 !important;
+  color: white !important;
+}
+
+/* Override Firefox spinner button colors */
+.dark-mode-number-input::-webkit-inner-spin-button,
+.dark-mode-number-input::-webkit-outer-spin-button {
+  opacity: 1;
+  background: #3E3E42;
+  border-left: 1px solid #4D4D50;
+  border-radius: 0;
+}
+
+/* Stack size slider enhancements */
+input[type="range"].stack-size-slider {
+  width: 100%;
+  height: 8px;
+  border-radius: 10px;
+  background: #2D2D30;
+}
+
+input[type="range"].stack-size-slider::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+}
+
+input[type="range"].stack-size-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+}
+
+/* Stack size input container */
+.stack-size-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 10px;
+  background-color: #2D2D30;
+  border-radius: 8px;
+}
+
+.stack-size-container input[type="number"] {
+  width: 80px;
+  text-align: center;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #3E3E42;
+  background-color: #1E1E1E;
+}
+
+.stack-size-container input[type="range"] {
+  flex: 1;
+}
+
+.dark-mode-number-input:focus {
+  outline: none !important;
+  border-color: #4f46e5 !important;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.25) !important;
+} 

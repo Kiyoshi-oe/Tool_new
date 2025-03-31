@@ -1,3 +1,4 @@
+import path from 'path';
 
 // Method to serialize the file data back to text format
 export const serializeToText = (fileData: any, originalContent?: string): string => {
@@ -107,28 +108,58 @@ export const trackModifiedFile = (fileName: string, content: string) => {
 
 // Track changes to propItem entries (names and descriptions)
 export const trackPropItemChanges = (itemId: string, itemName: string, displayName: string, description: string) => {
-  // We'll collect all propItem changes and then serialize them when saving
-  // Mark the propItem.txt.txt file as modified with a placeholder
-  trackModifiedFile("propItem.txt.txt", `PENDING_CHANGES_FOR_${itemId}`);
-  console.log(`Tracked propItem changes for ${itemName}: "${displayName}" / "${description.substring(0, 30)}..."`);
+  // Statt einen Platzhalter zu speichern, erstellen wir ein temporäres Item, das die Änderungen enthält
+  const tempItem = {
+    name: itemName,
+    data: { szName: itemId },
+    displayName: displayName,
+    description: description
+  };
+  
+  // Protokolliere die Änderungen ausführlich
+  console.log(`PropItem Änderung verfolgt: ID=${itemId}, Name=${itemName}`);
+  console.log(`  Neuer Anzeigename: "${displayName}"`);
+  console.log(`  Neue Beschreibung: "${description.substring(0, 30)}${description.length > 30 ? '...' : ''}"`);
+  
+  // Serialisiere sofort die Änderung
+  try {
+    const content = serializePropItemData([tempItem]);
+    console.log(`Generierter propItem-Inhalt: ${content}`);
+    
+    // Speichere die tatsächlichen Änderungen
+    trackModifiedFile("propItem.txt.txt", content);
+  } catch (error) {
+    console.error(`Fehler beim Serialisieren von PropItem-Änderungen:`, error);
+    console.error(`ItemId: ${itemId}, Name: ${itemName}`);
+    // Fehler für Debugging-Zwecke protokollieren, aber nicht werfen
+  }
 };
 
 // Save all propItem changes to the propItem.txt.txt file
 export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
-  if (!items || items.length === 0) return false;
+  console.log("savePropItemChanges aufgerufen mit", items?.length || 0, "Items");
+  
+  if (!items || items.length === 0) {
+    console.warn("Keine Items zum Speichern vorhanden!");
+    return false;
+  }
   
   // Only process if we have pending propItem changes
   const hasPropItemChanges = modifiedFiles.some(file => file.name === "propItem.txt.txt");
-  if (!hasPropItemChanges) return true;
+  if (!hasPropItemChanges) {
+    console.warn("Keine propItem.txt.txt-Änderungen gefunden, obwohl die Funktion aufgerufen wurde");
+    return true;
+  }
   
   try {
-    console.log("Serializing propItem changes for", items.length, "items");
+    console.log("Serialisiere propItem-Änderungen für", items.length, "Items");
     
     // First load the existing propItem.txt.txt file to preserve existing entries
     let existingContent = "";
     let isUtf16 = false;
     
     try {
+      console.log("Versuche, die vorhandene propItem.txt.txt zu laden");
       const response = await fetch('/public/resource/propItem.txt.txt');
       if (response.ok) {
         // Get the file as an ArrayBuffer to handle different encodings
@@ -138,7 +169,7 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
         const firstBytes = new Uint8Array(buffer.slice(0, 2));
         
         if (firstBytes[0] === 0xFF && firstBytes[1] === 0xFE) {
-          console.log("UTF-16LE encoding detected in existing propItem.txt.txt");
+          console.log("UTF-16LE-Kodierung in existierender propItem.txt.txt erkannt");
           existingContent = new TextDecoder('utf-16le').decode(buffer);
           isUtf16 = true;
         } else {
@@ -146,18 +177,19 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
           existingContent = new TextDecoder('utf-8').decode(buffer);
         }
         
-        console.log("Loaded existing propItem.txt.txt, content length:", existingContent.length);
+        console.log("Existierende propItem.txt.txt geladen, Inhaltslänge:", existingContent.length);
       } else {
-        console.warn("Could not load existing propItem.txt.txt, will create new file");
+        console.warn("Konnte existierende propItem.txt.txt nicht laden, Status:", response.status);
       }
     } catch (error) {
-      console.warn("Error loading existing propItem.txt.txt:", error);
+      console.warn("Fehler beim Laden der existierenden propItem.txt.txt:", error);
     }
     
     // Parse existing content to create a map of IDs to values
     const existingEntries: { [key: string]: string } = {};
     if (existingContent) {
       const lines = existingContent.split(/\r?\n/);
+      console.log(`Vorhandene propItem.txt.txt hat ${lines.length} Zeilen`);
       for (const line of lines) {
         if (!line.trim()) continue; // Skip empty lines
         
@@ -170,25 +202,79 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
           }
         }
       }
-      console.log(`Parsed ${Object.keys(existingEntries).length} existing entries from propItem.txt.txt`);
+      console.log(`${Object.keys(existingEntries).length} existierende Einträge aus propItem.txt.txt geparst`);
     }
     
-    // Now serialize our changed items
-    const serializedChanges = serializePropItemData(items);
+    // Finde zu aktualisierende Items
+    // Wir betrachten auch bereits modifizierte Items, die noch nicht gespeichert wurden
+    const modifiedItems = items.filter(item => 
+      item.displayName !== undefined || 
+      item.description !== undefined
+    );
     
-    // Parse the serialized changes to update the existing entries
-    const changeLines = serializedChanges.split(/\r?\n/);
-    for (const line of changeLines) {
-      if (!line.trim()) continue; // Skip empty lines
-      
-      const parts = line.split('\t');
-      if (parts.length >= 2) {
-        const id = parts[0].trim();
-        if (id.match(/IDS_PROPITEM_TXT_\d+/)) {
-          existingEntries[id] = parts[1].trim();
+    console.log(`${modifiedItems.length} modifizierte Items aus ${items.length} Gesamtitems gefunden`);
+    
+    // Hole auch änderungen aus modifiedFiles für propItem.txt.txt
+    const propItemFileEntries = modifiedFiles.find(f => f.name === "propItem.txt.txt");
+    if (propItemFileEntries) {
+      console.log("Füge Änderungen aus modifiedFiles hinzu");
+      try {
+        const pendingLines = propItemFileEntries.content.split(/\r?\n/);
+        for (const line of pendingLines) {
+          if (!line.trim()) continue;
+          
+          const parts = line.split('\t');
+          if (parts.length >= 2) {
+            const id = parts[0].trim();
+            if (id.match(/IDS_PROPITEM_TXT_\d+/)) {
+              console.log(`Aktualisiere ID aus modifiedFiles: ${id} = ${parts[1]}`);
+              existingEntries[id] = parts[1].trim();
+            }
+          }
         }
+      } catch (e) {
+        console.warn("Fehler beim Verarbeiten der modifiedFiles:", e);
       }
     }
+    
+    // Directly update each modified item in the existing entries
+    modifiedItems.forEach(item => {
+      if (!item.name || !item.data || !item.data.szName) {
+        console.warn("Ungültiges Item ohne Name oder szName:", item);
+        return;
+      }
+      
+      // Get the ID from the item's propItem ID (szName field)
+      const propItemId = item.data.szName as string;
+      const idMatch = propItemId.match(/IDS_PROPITEM_TXT_(\d+)/);
+      if (!idMatch) {
+        console.warn(`Ungültige PropItem ID: ${propItemId}`);
+        return;
+      }
+      
+      const baseId = parseInt(idMatch[1], 10);
+      if (isNaN(baseId)) {
+        console.warn(`Ungültige Basis-ID: ${idMatch[1]}`);
+        return;
+      }
+      
+      // WICHTIG: Stelle sicher, dass die ID korrekt formatiert ist!
+      const paddedId = baseId.toString().padStart(6, '0');
+      
+      // Log each modification
+      console.log(`Aktualisiere Item: ${item.name} (${propItemId})`);
+      if (item.displayName !== undefined) {
+        const nameId = `IDS_PROPITEM_TXT_${paddedId}`;
+        console.log(`  Name-ID: ${nameId} = ${item.displayName}`);
+        existingEntries[nameId] = item.displayName || item.name;
+      }
+      
+      if (item.description !== undefined) {
+        const descId = `IDS_PROPITEM_TXT_${(baseId + 1).toString().padStart(6, '0')}`;
+        console.log(`  Beschreibungs-ID: ${descId} = ${item.description.substring(0, 30)}...`);
+        existingEntries[descId] = item.description || '';
+      }
+    });
     
     // Rebuild the final content from the updated entries
     const finalLines = Object.entries(existingEntries)
@@ -203,19 +289,45 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
     // Use Windows-style line endings (CRLF) for better compatibility
     const finalContent = finalLines.join('\r\n');
     
-    // Update the tracked file with the actual content
-    const existingIndex = modifiedFiles.findIndex(file => file.name === "propItem.txt.txt");
-    if (existingIndex >= 0) {
-      modifiedFiles[existingIndex].content = finalContent;
-    } else {
-      // Add it to the modified files if it's not already there
-      trackModifiedFile("propItem.txt.txt", finalContent);
-    }
+    console.log(`Finale propItem.txt.txt hat ${finalLines.length} Einträge`);
     
-    console.log(`Updated propItem.txt.txt with ${finalLines.length} entries`);
-    return true;
+    // Direkte Debug-Ausgabe einiger Werte, um das Problem zu isolieren
+    console.log(`Direkte Speicherprüfung für ID_000160:`);
+    const debugEntry = existingEntries["IDS_PROPITEM_TXT_000160"];
+    console.log(debugEntry ? `ID_000160 = ${debugEntry}` : "ID_000160 nicht gefunden");
+    
+    // Directly save the file using the improved Electron saving method
+    console.log("Rufe saveTextFile auf...");
+    const success = await saveTextFile(finalContent, "propItem.txt.txt");
+    
+    if (success) {
+      console.log("propItem.txt.txt erfolgreich gespeichert");
+      return true;
+    } else {
+      console.error("Fehler beim Speichern von propItem.txt.txt");
+      
+      // Bei Fehlern versuchen, eine lokale Datei herunterzuladen
+      console.log("Versuche, eine lokale Kopie zu speichern...");
+      try {
+        const blob = new Blob([finalContent], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = "propItem.txt.txt";
+        link.click();
+        
+        URL.revokeObjectURL(url);
+        
+        console.log("Lokale Kopie als Download bereitgestellt");
+      } catch (downloadError) {
+        console.error("Fehler beim Versuch, eine lokale Kopie zu speichern:", downloadError);
+      }
+      
+      return false;
+    }
   } catch (error) {
-    console.error("Error serializing propItem changes:", error);
+    console.error("Fehler beim Serialisieren von propItem-Änderungen:", error);
     return false;
   }
 };
@@ -255,8 +367,16 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
     trackModifiedFile(fileName, finalContent);
     
     // Check if we're in Electron environment
-    const isElectron = window.navigator.userAgent.toLowerCase().indexOf('electron') > -1;
+    const isElectron = window.navigator.userAgent.toLowerCase().indexOf('electron') > -1 || 
+                       (window as any).electronAPI !== undefined;
     
+    console.log("Erkennungswerte:", {
+      userAgent: window.navigator.userAgent.toLowerCase(),
+      hasElectronInUA: window.navigator.userAgent.toLowerCase().indexOf('electron') > -1,
+      hasElectronAPI: !!(window as any).electronAPI,
+      isElectron
+    });
+
     if (isElectron) {
       try {
         console.log("Electron environment detected, attempting direct save");
@@ -264,7 +384,18 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
         // First try to save via the electronAPI
         if ((window as any).electronAPI) {
           console.log("Using electronAPI.saveFile");
-          const result = await (window as any).electronAPI.saveFile(fileName, content, './public/resource');
+          
+          // Ensure content is a string (not an object)
+          if (typeof finalContent !== 'string') {
+            console.warn("Content is not a string, converting to string");
+            finalContent = JSON.stringify(finalContent);
+          }
+          
+          // Log content length for debugging
+          console.log(`File content length: ${finalContent.length} characters`);
+          
+          // Use absolute path for resource folder to avoid path issues
+          const result = await (window as any).electronAPI.saveFile(fileName, finalContent, path.join(process.cwd(), 'public', 'resource'));
           
           if (result.success) {
             console.log(`File saved directly to resource folder via Electron API: ${result.path}`);
@@ -272,15 +403,25 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
             return;
           } else {
             console.error("Error saving via Electron API:", result.error);
+            // Fall back to download if electron API fails
+            downloadTextFile(finalContent, fileName);
+            resolve(false);
+            return;
           }
         } else {
           // Fallback to custom event for older versions
           console.log("Fallback to custom event for Electron");
+          
+          // Ensure content is a string
+          if (typeof finalContent !== 'string') {
+            finalContent = JSON.stringify(finalContent);
+          }
+          
           const event = new CustomEvent('save-file', { 
             detail: { 
               fileName, 
-              content, 
-              path: './public/resource' 
+              content: finalContent, 
+              path: path.join(process.cwd(), 'public', 'resource')
             }
           });
           window.dispatchEvent(event);
@@ -296,8 +437,9 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
             } else {
               console.error("Error saving via Electron:", response.error);
               window.removeEventListener('save-file-response', responseHandler);
-              // Fall back to server-side save
-              attemptServerSave();
+              // Fall back to download
+              downloadTextFile(finalContent, fileName);
+              resolve(false);
             }
           };
           
@@ -305,41 +447,27 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
           
           // Set a timeout in case Electron doesn't respond
           setTimeout(() => {
-            console.warn("No response from Electron after 2 seconds, falling back to server-side save");
+            console.warn("No response from Electron after 2 seconds, falling back to download");
             window.removeEventListener('save-file-response', responseHandler);
-            attemptServerSave();
+            downloadTextFile(finalContent, fileName);
+            resolve(false);
           }, 2000);
           
           return;
         }
       } catch (error) {
         console.error("Error using Electron save API:", error);
-        // Fall back to server-side save if Electron API fails
+        // Fall back to download if Electron API fails
+        downloadTextFile(finalContent, fileName);
+        resolve(false);
+        return;
       }
     }
     
-    // If not in Electron or Electron save failed, try server-side save
-    attemptServerSave();
-    
-    async function attemptServerSave() {
-      try {
-        const success = await saveToResourceFolder(content, fileName);
-        if (success) {
-          console.log(`File saved to server resource folder: ${fileName}`);
-          resolve(true);
-          return;
-        }
-        
-        // If server-side save fails, fall back to download
-        console.warn("Server-side save failed, falling back to download");
-        downloadTextFile(content, fileName);
-        resolve(false);
-      } catch (error) {
-        console.error("Error during server-side save:", error);
-        downloadTextFile(content, fileName);
-        resolve(false);
-      }
-    }
+    // If not in Electron, always fall back to download
+    console.warn("Not in Electron environment, falling back to download");
+    downloadTextFile(finalContent, fileName);
+    resolve(false);
   });
 };
 
@@ -355,13 +483,33 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
   console.log(`Saving ${filesToSave.length} modified files:`, filesToSave.map(f => f.name).join(', '));
   
   // Check if we're in Electron environment
-  const isElectron = window.navigator.userAgent.toLowerCase().indexOf('electron') > -1;
+  const isElectron = window.navigator.userAgent.toLowerCase().indexOf('electron') > -1 || 
+                     (window as any).electronAPI !== undefined;
   
+  console.log("Erkennungswerte (saveAllModifiedFiles):", {
+    userAgent: window.navigator.userAgent.toLowerCase(),
+    hasElectronInUA: window.navigator.userAgent.toLowerCase().indexOf('electron') > -1,
+    hasElectronAPI: !!(window as any).electronAPI,
+    isElectron
+  });
+
   if (isElectron) {
     try {
       if ((window as any).electronAPI) {
         console.log("Using electronAPI.saveAllFiles");
-        const result = await (window as any).electronAPI.saveAllFiles(filesToSave);
+        
+        // Ensure all content is string
+        const sanitizedFiles = filesToSave.map(file => ({
+          name: file.name,
+          content: typeof file.content === 'string' ? file.content : JSON.stringify(file.content)
+        }));
+        
+        // Log file sizes for debugging
+        sanitizedFiles.forEach(file => {
+          console.log(`File ${file.name} content length: ${file.content.length} characters`);
+        });
+        
+        const result = await (window as any).electronAPI.saveAllFiles(sanitizedFiles);
         
         if (result.success) {
           console.log(`All files saved successfully via Electron API`);
@@ -369,12 +517,27 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
           return true;
         } else {
           console.error("Error saving all files via Electron API:", result.error);
+          // Fall back to individual downloads
+          for (const file of filesToSave) {
+            downloadTextFile(
+              typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
+              file.name
+            );
+          }
+          return false;
         }
       } else {
         // Fallback to custom event
         console.log("Using custom event for saveAllFiles");
+        
+        // Ensure all content is string
+        const sanitizedFiles = filesToSave.map(file => ({
+          name: file.name,
+          content: typeof file.content === 'string' ? file.content : JSON.stringify(file.content)
+        }));
+        
         const event = new CustomEvent('save-all-files', { 
-          detail: { files: filesToSave }
+          detail: { files: sanitizedFiles }
         });
         window.dispatchEvent(event);
         
@@ -390,6 +553,14 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
             } else {
               console.error("Error saving all files via Electron:", response.error);
               window.removeEventListener('save-all-files-response', responseHandler);
+              
+              // Fall back to individual downloads
+              for (const file of filesToSave) {
+                downloadTextFile(
+                  typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
+                  file.name
+                );
+              }
               resolve(false);
             }
           };
@@ -400,48 +571,41 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
           setTimeout(() => {
             console.warn("No response from Electron after 2 seconds");
             window.removeEventListener('save-all-files-response', responseHandler);
+            
+            // Fall back to individual downloads
+            for (const file of filesToSave) {
+              downloadTextFile(
+                typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
+                file.name
+              );
+            }
             resolve(false);
           }, 2000);
         });
       }
     } catch (error) {
       console.error("Error using Electron saveAllFiles API:", error);
-    }
-  }
-  
-  // Try server-side save for all files
-  try {
-    const success = await saveMultipleFilesToResourceFolder(filesToSave);
-    if (success) {
-      console.log("All files saved to server resource folder");
-      clearModifiedFiles();
-      return true;
-    }
-  } catch (error) {
-    console.error("Error during server-side batch save:", error);
-  }
-  
-  // If all else fails, fall back to individual saves
-  console.warn("Batch save failed, falling back to individual file saves");
-  let allSuccessful = true;
-  
-  for (const file of filesToSave) {
-    try {
-      const success = await saveTextFile(file.content, file.name);
-      if (!success) {
-        allSuccessful = false;
+      
+      // Fall back to individual downloads
+      for (const file of filesToSave) {
+        downloadTextFile(
+          typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
+          file.name
+        );
       }
-    } catch (error) {
-      console.error(`Error saving file ${file.name}:`, error);
-      allSuccessful = false;
+      return false;
     }
   }
   
-  if (allSuccessful) {
-    clearModifiedFiles();
+  // If not in Electron, download all files
+  console.warn("Not in Electron environment, falling back to individual downloads");
+  for (const file of filesToSave) {
+    downloadTextFile(
+      typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
+      file.name
+    );
   }
-  
-  return allSuccessful;
+  return false;
 };
 
 // Improved server-side save function with better error handling and retry logic
