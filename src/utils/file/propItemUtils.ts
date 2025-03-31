@@ -1,5 +1,6 @@
 import { setPropItemMappings } from './parseUtils';
 import { trackPropItemChanges, savePropItemChanges } from './fileOperations';
+import path from 'path';
 
 // Interface for propItem data mapping
 interface PropItemMapping {
@@ -452,18 +453,26 @@ export const savePropItemsToFile = async (items: any[]): Promise<boolean> => {
       } else {
         console.error("Fehler beim Speichern von PropItem.txt.txt");
         
+        // Zeige eine Fehlermeldung an
+        alert("Fehler beim Speichern von propItem.txt.txt. Ein weiterer Versuch wird unternommen.");
+        
         // Bei Fehler trotzdem einen neuen Versuch mit saveToResourceFolder starten
         const retrySuccess = await saveToResourceFolder(content, "propItem.txt.txt");
         if (retrySuccess) {
           console.log("PropItem.txt.txt beim zweiten Versuch erfolgreich gespeichert");
           clearModifiedItems();
           return true;
+        } else {
+          alert("Das Speichern ist auch beim zweiten Versuch fehlgeschlagen. Bitte versuchen Sie es später erneut.");
         }
         
         return false;
       }
     } catch (saveError) {
       console.error("Fehler beim Speichern von PropItem.txt.txt:", saveError);
+      
+      // Zeige eine Fehlermeldung an
+      alert(`Fehler beim Speichern: ${saveError.message}. Ein Wiederholungsversuch wird gestartet.`);
       
       // Versuche es mit der Backup-Methode
       try {
@@ -472,9 +481,12 @@ export const savePropItemsToFile = async (items: any[]): Promise<boolean> => {
           console.log("PropItem.txt.txt über Backup-Methode erfolgreich gespeichert");
           clearModifiedItems();
           return true;
+        } else {
+          alert("Das Speichern ist auch über die Backup-Methode fehlgeschlagen. Bitte versuchen Sie es später erneut.");
         }
       } catch (retryError) {
         console.error("Auch Backup-Speichermethode fehlgeschlagen:", retryError);
+        alert(`Beide Speichermethoden sind fehlgeschlagen: ${retryError.message}`);
       }
       
       return false;
@@ -488,11 +500,30 @@ export const savePropItemsToFile = async (items: any[]): Promise<boolean> => {
 // Helfer-Funktion, um PropItem-Änderungen zu speichern
 const saveToResourceFolder = async (content: string, fileName: string): Promise<boolean> => {
   try {
+    // Versuche direkt über die Electron-API zu speichern
+    if ((window as any).electronAPI && (window as any).electronAPI.saveFile) {
+      console.log("Versuche direktes Speichern über Electron API");
+      
+      const result = await (window as any).electronAPI.saveFile(
+        fileName,
+        content,
+        path.join(process.cwd(), 'public', 'resource')
+      );
+      
+      if (result.success) {
+        console.log(`Datei ${fileName} erfolgreich gespeichert über Electron API`);
+        return true;
+      } else {
+        console.error(`Fehler beim Speichern über Electron API: ${result.error}`);
+      }
+    }
+    
     // Fallback auf den Import der saveTextFile-Funktion
     const { saveTextFile } = await import('./fileOperations');
     return await saveTextFile(content, fileName);
   } catch (error) {
     console.error(`Fehler beim Speichern von ${fileName}:`, error);
+    alert(`Fehler beim Speichern von ${fileName}: ${error.message}`);
     return false;
   }
 };

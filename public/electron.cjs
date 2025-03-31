@@ -81,6 +81,10 @@ function createWindow() {
       // Zusätzliche Überprüfung für leeren Inhalt
       if (!content || content.length === 0) {
         console.error(`WARNUNG: Leerer Inhalt für ${fileName}`);
+        return { 
+          success: false, 
+          error: 'Leerer Dateiinhalt' 
+        };
       }
       
       // Inhaltsdiagnose für .txt Dateien
@@ -227,7 +231,8 @@ function createWindow() {
           }
         }
         
-        fs.writeFileSync(fullPath, content, 'utf8');
+        // Verwende writeFileSync, um sicherzustellen, dass die Datei komplett geschrieben wird
+        fs.writeFileSync(fullPath, content, { encoding: 'utf8', flag: 'w' });
         console.log(`Datei erfolgreich nach ${fullPath} geschrieben`);
         
         // Verify the file was actually written
@@ -243,196 +248,208 @@ function createWindow() {
             fs.closeSync(fd);
             console.log(`Erste Bytes: ${buffer.toString().replace(/\n/g, '\\n')}`);
           }
+          
+          // Super-sicher, dass Änderungen geschrieben wurden, indem wir explizit Pufferinhalt leeren
+          try {
+            fs.fsyncSync(fs.openSync(fullPath, 'r+'));
+            console.log("Dateisystem-Puffer geleert");
+          } catch (fsyncError) {
+            console.warn("Konnte Dateisystem-Puffer nicht leeren:", fsyncError);
+          }
+          
+          // Rückgabe des Erfolgs mit Pfad
+          return { 
+            success: true, 
+            path: fullPath,
+            size: stats.size,
+            timestamp: new Date().toISOString()
+          };
         } else {
           throw new Error(`Datei existiert nach dem Schreiben nicht: ${fullPath}`);
         }
       } catch (writeError) {
         console.error(`FEHLER beim Schreiben der Datei: ${writeError.message}`);
-        console.error(writeError.stack);
-        throw writeError;
+        
+        // Versuche es mit einem alternativen Speichermethode
+        try {
+          console.log("Versuche alternative Speichermethode...");
+          
+          // Verwende writeFile mit voller Fehlerrückmeldung
+          await fs.promises.writeFile(fullPath, content, { encoding: 'utf8' });
+          
+          if (fs.existsSync(fullPath)) {
+            const stats = fs.statSync(fullPath);
+            console.log(`Datei erfolgreich mit alternativer Methode gespeichert. Größe: ${stats.size} Bytes`);
+            
+            return { 
+              success: true, 
+              path: fullPath,
+              size: stats.size,
+              method: 'alternative'
+            };
+          }
+        } catch (altWriteError) {
+          console.error(`Auch alternative Speichermethode fehlgeschlagen: ${altWriteError.message}`);
+        }
+        
+        return { 
+          success: false, 
+          error: writeError.message || 'Unbekannter Fehler beim Schreiben der Datei',
+          fileName,
+          path: fullPath
+        };
       }
-      
-      return { 
-        success: true, 
-        fileName,
-        path: fullPath
-      };
     } catch (error) {
-      console.error('Fehler beim Speichern der Datei über IPC:', error);
+      console.error(`Allgemeiner Fehler beim Speichern von ${fileName}:`, error);
       return { 
         success: false, 
-        fileName, 
-        error: error.message || 'Unbekannter Fehler in electron.js' 
+        error: error.message || 'Unbekannter Fehler',
+        fileName
       };
     }
   });
 
-  // Handle IPC events for saving multiple files at once
-  ipcMain.handle('save-all-files', async (_, files) => {
+  // Handle IPC events for saving multiple files
+  ipcMain.handle('save-all-files', async (_, files, savePath) => {
     try {
-      console.log(`Electron: Saving ${files.length} files to resource folder`);
+      console.log(`Speichere ${files.length} Dateien nach ${savePath || 'Standard-Ressourcenordner'}`);
       
-      // Default path is the resource folder in the app
-      let resourceFolder = path.join(app.getAppPath(), 'public', 'resource');
+      // Determine the actual path to save to
+      let finalPath;
       
-      console.log(`Resolved resource folder path: ${resourceFolder}`);
-      console.log(`App path: ${app.getAppPath()}`);
-      console.log(`Current working directory: ${process.cwd()}`);
+      if (savePath) {
+        // If path is relative, make it absolute
+        if (!path.isAbsolute(savePath)) {
+          finalPath = path.join(app.getAppPath(), savePath);
+        } else {
+          finalPath = savePath;
+        }
+      } else {
+        // Default path is the resource folder in the app
+        finalPath = path.join(app.getAppPath(), 'public', 'resource');
+      }
+      
+      console.log(`Speicherpfad: ${finalPath}`);
       
       // Make sure the directory exists
-      if (!fs.existsSync(resourceFolder)) {
-        try {
-          fs.mkdirSync(resourceFolder, { recursive: true });
-          console.log(`Created directory: ${resourceFolder}`);
-        } catch (mkdirError) {
-          console.error(`Error creating directory ${resourceFolder}:`, mkdirError);
-          
-          // Try fallback to current working directory if app path fails
-          resourceFolder = path.join(process.cwd(), 'public', 'resource');
-          console.log(`Using fallback path: ${resourceFolder}`);
-          
-          if (!fs.existsSync(resourceFolder)) {
-            try {
-              fs.mkdirSync(resourceFolder, { recursive: true });
-              console.log(`Created fallback directory: ${resourceFolder}`);
-            } catch (fallbackError) {
-              console.error(`Error creating fallback directory ${resourceFolder}:`, fallbackError);
-              throw new Error(`Could not create directory: ${fallbackError.message}`);
-            }
-          }
-        }
+      if (!fs.existsSync(finalPath)) {
+        fs.mkdirSync(finalPath, { recursive: true });
+        console.log(`Verzeichnis erstellt: ${finalPath}`);
       }
       
-      // Results array for tracking each file save result
       const results = [];
       
-      // Special handling for propItem.txt.txt if it's included in the files to save
-      const propItemIndex = files.findIndex(f => f.name === 'propItem.txt.txt');
-      
-      if (propItemIndex >= 0) {
-        const propItemFile = files[propItemIndex];
-        console.log(`Special handling for propItem.txt.txt enabled`);
-        
-        // Check if file already exists and merge contents if it does
-        const fullPath = path.join(resourceFolder, propItemFile.name);
-        if (fs.existsSync(fullPath)) {
-          try {
-            console.log(`Existing propItem.txt.txt found, merging contents`);
-            const existingContent = fs.readFileSync(fullPath, 'utf8');
-            
-            // We have new entries in the format "ID\tValue"
-            // We need to ensure IDs are not duplicated
-            const existingLines = existingContent.split(/\r?\n/);
-            const newLines = propItemFile.content.split(/\r?\n/);
-            
-            // Create a map of ID to value from existing content
-            const entries = {};
-            existingLines.forEach(line => {
-              const parts = line.split('\t');
-              if (parts.length >= 2 && parts[0].trim().match(/IDS_PROPITEM_TXT_\d+/)) {
-                entries[parts[0].trim()] = parts[1].trim();
-              }
-            });
-            
-            // Update or add new entries
-            newLines.forEach(line => {
-              const parts = line.split('\t');
-              if (parts.length >= 2 && parts[0].trim().match(/IDS_PROPITEM_TXT_\d+/)) {
-                entries[parts[0].trim()] = parts[1].trim();
-              }
-            });
-            
-            // Create final content, sorted by ID
-            const finalLines = Object.entries(entries)
-              .sort((a, b) => {
-                const numA = parseInt(a[0].replace(/\D/g, ''), 10);
-                const numB = parseInt(b[0].replace(/\D/g, ''), 10);
-                return numA - numB;
-              })
-              .map(([id, value]) => `${id}\t${value}`);
-            
-            // Use Windows line breaks for better compatibility
-            propItemFile.content = finalLines.join('\r\n');
-            
-            console.log(`Merged propItem.txt.txt has ${finalLines.length} entries`);
-          } catch (mergeError) {
-            console.error(`Error merging propItem.txt.txt:`, mergeError);
-            // Use new content if merge fails
-          }
-        }
-      }
-      
-      // Save each file
+      // Speichere jede Datei einzeln
       for (const file of files) {
         try {
+          console.log(`Speichere Datei ${file.name} (${file.content ? file.content.length : 0} Zeichen)`);
+          
+          // Spezielle Behandlung für propItem.txt.txt
+          let finalContent = file.content;
+          
+          if (file.name === 'propItem.txt.txt' && fs.existsSync(path.join(finalPath, file.name))) {
+            try {
+              console.log(`Bestehende propItem.txt.txt gefunden, führe Inhalte zusammen`);
+              const existingContent = fs.readFileSync(path.join(finalPath, file.name), 'utf8');
+              
+              // Wir haben neue Einträge im Format "ID\tWert"
+              // Wir müssen sicherstellen, dass IDs nicht dupliziert werden
+              const existingLines = existingContent.split(/\r?\n/);
+              const newLines = file.content.split(/\r?\n/);
+              
+              // Erstelle eine Map von ID zu Wert aus dem bestehenden Inhalt
+              const entries = {};
+              existingLines.forEach(line => {
+                const parts = line.split('\t');
+                if (parts.length >= 2 && parts[0].trim().match(/IDS_PROPITEM_TXT_\d+/)) {
+                  entries[parts[0].trim()] = parts[1].trim();
+                }
+              });
+              
+              // Aktualisiere oder füge neue Einträge hinzu
+              newLines.forEach(line => {
+                const parts = line.split('\t');
+                if (parts.length >= 2 && parts[0].trim().match(/IDS_PROPITEM_TXT_\d+/)) {
+                  entries[parts[0].trim()] = parts[1].trim();
+                }
+              });
+              
+              // Erstelle den endgültigen Inhalt, sortiert nach ID
+              const finalLines = Object.entries(entries)
+                .sort((a, b) => {
+                  const numA = parseInt(a[0].replace(/\D/g, ''), 10);
+                  const numB = parseInt(b[0].replace(/\D/g, ''), 10);
+                  return numA - numB;
+                })
+                .map(([id, value]) => `${id}\t${value}`);
+              
+              // Nutze Windows-Zeilenumbrüche für bessere Kompatibilität
+              finalContent = finalLines.join('\r\n');
+              
+              console.log(`Zusammengeführte propItem.txt.txt hat ${finalLines.length} Einträge`);
+            } catch (mergeError) {
+              console.error(`Fehler beim Zusammenführen von propItem.txt.txt:`, mergeError);
+              // Verwende neuen Inhalt, wenn Zusammenführung fehlschlägt
+            }
+          }
+          
           // The full path including filename
-          const fullPath = path.join(resourceFolder, file.name);
-          console.log(`Saving to: ${fullPath}`);
+          const fullPath = path.join(finalPath, file.name);
           
-          // Try using fs.access to check if we have write permissions
-          try {
-            if (fs.existsSync(resourceFolder)) {
-              fs.accessSync(resourceFolder, fs.constants.W_OK);
-              console.log(`Write permissions confirmed for directory: ${resourceFolder}`);
+          // Backup existing file if it exists
+          if (fs.existsSync(fullPath)) {
+            const backupPath = `${fullPath}.bak`;
+            try {
+              fs.copyFileSync(fullPath, backupPath);
+              console.log(`Backup erstellt: ${backupPath}`);
+            } catch (backupError) {
+              console.warn(`Konnte kein Backup erstellen: ${backupError.message}`);
             }
-          } catch (accessError) {
-            console.error(`No write permissions for directory ${resourceFolder}:`, accessError);
-            throw new Error(`No write permission: ${accessError.message}`);
           }
           
-          // Write the file with explicit error handling
-          try {
-            // Backup existing file if it exists
-            if (fs.existsSync(fullPath)) {
-              const backupPath = `${fullPath}.bak`;
-              try {
-                fs.copyFileSync(fullPath, backupPath);
-                console.log(`Backup created: ${backupPath}`);
-              } catch (backupError) {
-                console.warn(`Could not create backup: ${backupError.message}`);
-              }
-            }
-            
-            fs.writeFileSync(fullPath, file.content, 'utf8');
-            console.log(`Successfully wrote file to ${fullPath}`);
-            
-            // Verify the file was actually written
-            if (fs.existsSync(fullPath)) {
-              const stats = fs.statSync(fullPath);
-              console.log(`File size: ${stats.size} bytes`);
-            } else {
-              throw new Error(`File does not exist after writing: ${fullPath}`);
-            }
-          } catch (writeError) {
-            console.error(`ERROR writing file: ${writeError.message}`);
-            console.error(writeError.stack);
-            throw writeError;
-          }
+          // Write the file
+          fs.writeFileSync(fullPath, finalContent, { encoding: 'utf8', flag: 'w' });
           
-          results.push({ 
-            success: true, 
-            fileName: file.name,
-            path: fullPath
-          });
+          // Verify the file was actually written
+          if (fs.existsSync(fullPath)) {
+            const stats = fs.statSync(fullPath);
+            console.log(`Datei ${file.name} erfolgreich gespeichert. Größe: ${stats.size} Bytes`);
+            
+            results.push({
+              name: file.name,
+              success: true,
+              path: fullPath,
+              size: stats.size
+            });
+          } else {
+            throw new Error(`Datei existiert nach dem Schreiben nicht: ${fullPath}`);
+          }
         } catch (fileError) {
-          console.error(`Failed to save file ${file.name}:`, fileError);
-          results.push({ 
-            success: false, 
-            fileName: file.name, 
-            error: fileError.message || 'Unknown error' 
+          console.error(`Fehler beim Speichern von ${file.name}:`, fileError);
+          
+          results.push({
+            name: file.name,
+            success: false,
+            error: fileError.message || 'Unbekannter Fehler'
           });
         }
       }
       
-      return { 
-        success: results.every(r => r.success), 
-        results
+      // Prüfe, ob alle Dateien erfolgreich gespeichert wurden
+      const allSuccessful = results.every(result => result.success);
+      
+      return {
+        success: allSuccessful,
+        results,
+        timestamp: new Date().toISOString()
       };
     } catch (error) {
-      console.error('Failed to save files via IPC:', error);
-      return { 
-        success: false, 
-        error: error.message || 'Unknown error in electron.js' 
+      console.error(`Allgemeiner Fehler beim Speichern aller Dateien:`, error);
+      
+      return {
+        success: false,
+        error: error.message || 'Unbekannter Fehler',
+        timestamp: new Date().toISOString()
       };
     }
   });

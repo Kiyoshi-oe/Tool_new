@@ -271,7 +271,7 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
     
     try {
       console.log("Versuche, die vorhandene propItem.txt.txt zu laden");
-      const response = await fetch('/public/resource/propItem.txt.txt');
+      const response = await fetch('/resource/propItem.txt.txt');
       if (response.ok) {
         // Get the file as an ArrayBuffer to handle different encodings
         const buffer = await response.arrayBuffer();
@@ -291,6 +291,12 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
         console.log("Existierende propItem.txt.txt geladen, Inhaltslänge:", existingContent.length);
       } else {
         console.warn("Konnte existierende propItem.txt.txt nicht laden, Status:", response.status);
+        // Alternativer Pfad für die Suche
+        const altResponse = await fetch('/public/resource/propItem.txt.txt');
+        if (altResponse.ok) {
+          existingContent = await altResponse.text();
+          console.log("Existierende propItem.txt.txt vom alternativen Pfad geladen");
+        }
       }
     } catch (error) {
       console.warn("Fehler beim Laden der existierenden propItem.txt.txt:", error);
@@ -413,32 +419,18 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
     
     if (success) {
       console.log("propItem.txt.txt erfolgreich gespeichert");
+      // Entferne die Datei aus der Liste der modifizierten Dateien
+      modifiedFiles = modifiedFiles.filter(file => file.name !== "propItem.txt.txt");
       return true;
     } else {
       console.error("Fehler beim Speichern von propItem.txt.txt");
-      
-      // Bei Fehlern versuchen, eine lokale Datei herunterzuladen
-      console.log("Versuche, eine lokale Kopie zu speichern...");
-      try {
-        const blob = new Blob([finalContent], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = "propItem.txt.txt";
-        link.click();
-        
-        URL.revokeObjectURL(url);
-        
-        console.log("Lokale Kopie als Download bereitgestellt");
-      } catch (downloadError) {
-        console.error("Fehler beim Versuch, eine lokale Kopie zu speichern:", downloadError);
-      }
-      
+      // Zeige eine Fehlermeldung an
+      alert("Fehler beim Speichern von propItem.txt.txt. Bitte versuchen Sie es erneut.");
       return false;
     }
   } catch (error) {
     console.error("Fehler beim Serialisieren von propItem-Änderungen:", error);
+    alert(`Fehler beim Speichern von propItem.txt.txt: ${error.message}`);
     return false;
   }
 };
@@ -459,14 +451,18 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
     // Check if this is a Spec_item.txt file (case insensitive)
     const isSpecItemFile = fileName.toLowerCase().includes('spec_item') || fileName.toLowerCase().includes('specitem');
     
-    // For Spec_item.txt files, ensure we're preserving the exact content
+    // For Spec_item.txt files, we need special handling to preserve content but include changes
     let finalContent = content;
     if (isSpecItemFile && content.startsWith('{')) {
       try {
         const parsedContent = JSON.parse(content);
-        if (parsedContent.originalContent) {
-          console.log(`Using original content for ${fileName} to preserve exact format`);
-          finalContent = parsedContent.originalContent;
+        // Anstatt originalContent direkt zu verwenden, wenden wir Änderungen an
+        if (parsedContent.originalContent && parsedContent.items) {
+          console.log(`Verarbeite Spec_Item Datei mit ${parsedContent.items.length} Items`);
+          
+          // Verwende serializeToText, um Änderungen zu übernehmen
+          finalContent = serializeToText(parsedContent, parsedContent.originalContent);
+          console.log(`Spec_Item Datei mit Änderungen serialisiert`);
         }
       } catch (error) {
         console.warn(`Failed to parse content as JSON for ${fileName}:`, error);
@@ -506,10 +502,14 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
           console.log(`File content length: ${finalContent.length} characters`);
           
           // Use absolute path for resource folder to avoid path issues
-          const result = await (window as any).electronAPI.saveFile(fileName, finalContent, path.join(process.cwd(), 'public', 'resource'));
+          const result = await (window as any).electronAPI.saveFile(
+            fileName, 
+            finalContent, 
+            path.join(process.cwd(), 'public', 'resource')
+          );
           
           if (result.success) {
-            console.log(`File saved directly to resource folder via Electron API: ${result.path}`);
+            console.log(`File ${fileName} saved directly to resource folder via Electron API: ${result.path}`);
             
             // Wenn diese Datei Spec_Item.txt ist, überprüfe, ob wir auch propItem.txt.txt speichern müssen
             if (isSpecItemFile) {
@@ -522,73 +522,81 @@ export const saveTextFile = (content: string, fileName: string): Promise<boolean
             }
             
             resolve(true);
-            return;
           } else {
             console.error("Error saving via Electron API:", result.error);
-            // Fall back to download if electron API fails
-            downloadTextFile(finalContent, fileName);
+            
+            // Versuche es stattdessen mit dem Event-basierten Mechanismus
+            await saveViaElectronEvent(fileName, finalContent);
             resolve(false);
-            return;
           }
         } else {
-          // Fallback to custom event for older versions
-          console.log("Fallback to custom event for Electron");
-          
-          // Ensure content is a string
-          if (typeof finalContent !== 'string') {
-            finalContent = JSON.stringify(finalContent);
-          }
-          
-          const event = new CustomEvent('save-file', { 
-            detail: { 
-              fileName, 
-              content: finalContent, 
-              path: path.join(process.cwd(), 'public', 'resource')
-            }
-          });
-          window.dispatchEvent(event);
-          
-          // Listen for the response from Electron
-          const responseHandler = (event: any) => {
-            const response = event.detail;
-            console.log("Save response from Electron:", response);
-            if (response.success) {
-              console.log(`File saved directly to resource folder via Electron: ${fileName}`);
-              window.removeEventListener('save-file-response', responseHandler);
-              resolve(true);
-            } else {
-              console.error("Error saving via Electron:", response.error);
-              window.removeEventListener('save-file-response', responseHandler);
-              // Fall back to download
-              downloadTextFile(finalContent, fileName);
-              resolve(false);
-            }
-          };
-          
-          window.addEventListener('save-file-response', responseHandler, { once: true });
-          
-          // Set a timeout in case Electron doesn't respond
-          setTimeout(() => {
-            console.warn("No response from Electron after 2 seconds, falling back to download");
-            window.removeEventListener('save-file-response', responseHandler);
-            downloadTextFile(finalContent, fileName);
-            resolve(false);
-          }, 2000);
-          
-          return;
+          // Versuch, über das Event zu speichern
+          const success = await saveViaElectronEvent(fileName, finalContent);
+          resolve(success);
         }
       } catch (saveError) {
         console.error("Error saving file via Electron:", saveError);
-        // Fall back to download
-        downloadTextFile(finalContent, fileName);
-        resolve(false);
+        // Versuche es mit dem Event-basierten Mechanismus
+        const success = await saveViaElectronEvent(fileName, finalContent);
+        resolve(success);
       }
+    } else {
+      // Not in Electron environment - inform user that saving is not possible
+      console.error("Cannot save in browser environment - Electron is required");
+      alert("Das Speichern von Dateien ist nur in der Electron-App möglich.");
+      resolve(false);
     }
-    
-    // If not in Electron, always fall back to download
-    console.warn("Not in Electron environment, falling back to download");
-    downloadTextFile(finalContent, fileName);
-    resolve(false);
+  });
+};
+
+// Helper function to save via Electron event
+const saveViaElectronEvent = (fileName: string, content: string): Promise<boolean> => {
+  return new Promise((resolve) => {
+    try {
+      console.log("Attempting to save via custom event for Electron");
+      
+      // Ensure content is a string
+      const finalContent = typeof content === 'string' ? content : JSON.stringify(content);
+      
+      const event = new CustomEvent('save-file', { 
+        detail: { 
+          fileName, 
+          content: finalContent, 
+          path: path.join(process.cwd(), 'public', 'resource')
+        }
+      });
+      
+      window.dispatchEvent(event);
+      
+      // Listen for the response from Electron
+      const responseHandler = (event: any) => {
+        const response = event.detail;
+        console.log("Save response from Electron:", response);
+        
+        if (response.success) {
+          console.log(`File saved directly to resource folder via Electron: ${fileName}`);
+          resolve(true);
+        } else {
+          console.error("Error saving via Electron:", response.error);
+          alert(`Fehler beim Speichern: ${response.error}`);
+          resolve(false);
+        }
+      };
+      
+      window.addEventListener('save-file-response', responseHandler, { once: true });
+      
+      // Set a timeout in case Electron doesn't respond
+      setTimeout(() => {
+        console.warn("No response from Electron after 3 seconds");
+        window.removeEventListener('save-file-response', responseHandler);
+        alert("Keine Antwort vom Speichervorgang erhalten. Bitte versuchen Sie es erneut.");
+        resolve(false);
+      }, 3000);
+    } catch (error) {
+      console.error("Error in saveViaElectronEvent:", error);
+      alert(`Fehler beim Speichern über Electron Event: ${error.message}`);
+      resolve(false);
+    }
   });
 };
 
@@ -662,9 +670,16 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
         
         try {
           // Versuche die Datei zu parsen, um zu sehen, ob es Änderungen an displayName/description gibt
-          const specItemData = JSON.parse(specItemFile.content);
+          let specItemData;
           
-          if (specItemData.items && Array.isArray(specItemData.items)) {
+          // Prüfe, ob der Inhalt bereits ein JSON-Objekt ist
+          if (typeof specItemFile.content === 'string' && specItemFile.content.startsWith('{')) {
+            specItemData = JSON.parse(specItemFile.content);
+          } else if (typeof specItemFile.content === 'object') {
+            specItemData = specItemFile.content;
+          }
+          
+          if (specItemData && specItemData.items && Array.isArray(specItemData.items)) {
             // Finde Items mit displayName/description, die sich geändert haben könnten
             const itemsWithNameChanges = specItemData.items.filter(
               item => item.displayName !== undefined || item.description !== undefined
@@ -713,11 +728,29 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
       console.log("Using electronAPI.saveAllFiles");
       
       // Stelle sicher, dass der Inhalt jeder Datei ein String ist
-      const filesToSave = modifiedFiles.map(file => ({
-        name: file.name,
-        content: typeof file.content === 'string' ? file.content : JSON.stringify(file.content),
-        metadata: file.metadata
-      }));
+      const filesToSave = modifiedFiles.map(file => {
+        // Verarbeite Spec_Item.txt Dateien separat, um Änderungen beizubehalten
+        let content = file.content;
+        
+        if ((file.name.toLowerCase().includes('spec_item') || file.name.toLowerCase().includes('specitem'))
+            && typeof content === 'string' && content.startsWith('{')) {
+          try {
+            const parsedContent = JSON.parse(content);
+            // Wende Änderungen auf originalContent an, anstatt ihn direkt zu verwenden
+            if (parsedContent.originalContent && parsedContent.items) {
+              content = serializeToText(parsedContent, parsedContent.originalContent);
+            }
+          } catch (error) {
+            console.warn(`Fehler beim Parsen des Inhalts von ${file.name}:`, error);
+          }
+        }
+        
+        return {
+          name: file.name,
+          content: typeof content === 'string' ? content : JSON.stringify(content),
+          metadata: file.metadata
+        };
+      });
       
       try {
         const result = await (window as any).electronAPI.saveAllFiles(
@@ -743,6 +776,7 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
           return true;
         } else {
           console.error("Error saving all files via Electron API:", result.error);
+          alert(`Fehler beim Speichern aller Dateien: ${result.error}`);
           
           // Versuche, jede Datei einzeln zu speichern
           let allSuccessful = true;
@@ -764,49 +798,53 @@ export const saveAllModifiedFiles = async (): Promise<boolean> => {
             }
           }
           
-          if (!allSuccessful) {
-            // Fall back to individual downloads for all files
-            for (const file of filesToSave) {
-              downloadTextFile(file.content, file.name);
-            }
+          if (allSuccessful) {
+            // Leere die modifiedFiles Liste nur bei Erfolg
+            modifiedFiles = [];
           }
           
           return allSuccessful;
         }
       } catch (error) {
         console.error("Error saving all files:", error);
-        
-        // Fall back to individual downloads
-        for (const file of modifiedFiles) {
-          downloadTextFile(
-            typeof file.content === 'string' ? file.content : JSON.stringify(file.content), 
-            file.name
-          );
-        }
-        
+        alert(`Ein Fehler ist beim Speichern aufgetreten: ${error.message}`);
         return false;
       }
     } else {
-      // ... existing code for saveMultipleFilesToResourceFolder ...
+      // Keine Electron-API verfügbar - versuche jede Datei einzeln zu speichern
+      console.log("No saveAllFiles API available, trying to save files individually");
+      
+      let allSuccessful = true;
+      
+      for (const file of modifiedFiles) {
+        try {
+          const success = await saveTextFile(
+            typeof file.content === 'string' ? file.content : JSON.stringify(file.content),
+            file.name
+          );
+          
+          if (!success) {
+            allSuccessful = false;
+            console.error(`Error saving file ${file.name}`);
+          }
+        } catch (error) {
+          allSuccessful = false;
+          console.error(`Error saving file ${file.name}:`, error);
+        }
+      }
+      
+      // Nur bei Erfolg die Liste leeren
+      if (allSuccessful) {
+        modifiedFiles = [];
+      }
+      
+      return allSuccessful;
     }
   } catch (error) {
     console.error("Error in saveAllModifiedFiles:", error);
+    alert(`Fehler beim Speichern aller Dateien: ${error.message}`);
     return false;
   }
-};
-
-// Standard browser download method (fallback)
-const downloadTextFile = (content: string, fileName: string): void => {
-  console.log("Falling back to browser download for", fileName);
-  const blob = new Blob([content], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  
-  URL.revokeObjectURL(url);
 };
 
 export const readTextFile = (file: File): Promise<string> => {
