@@ -18,6 +18,7 @@ export const useTabs = (
   setSelectedItem: React.Dispatch<React.SetStateAction<ResourceItem | null>>
 ) => {
   const [openTabs, setOpenTabs] = useState<TabItem[]>([]);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const lastClickTime = useRef<{ [key: string]: number }>({});
   const doubleClickThreshold = 300; // ms
   
@@ -169,32 +170,17 @@ export const useTabs = (
   }, [selectedItem, setSelectedItem]);
   
   // Tab speichern
-  const saveCurrentTab = useCallback((fileData: any) => {
-    // Sicherstellen, dass sowohl Spec_Item.txt als auch propItem.txt.txt aktualisiert werden
-    if (selectedItem && fileData) {
-      ensurePropItemConsistency(fileData);
+  const saveCurrentTab = useCallback(async (itemEditor: any) => {
+    if (!selectedItem || !itemEditor?.saveChanges) {
+      console.log("Kein Item ausgewählt oder keine saveChanges Funktion verfügbar");
+      return false;
+    }
+
+    try {
+      // Speichere die Änderungen über den ItemEditor
+      await itemEditor.saveChanges();
       
-      // Anzeige für den Benutzer
-      const modifiedFiles = getModifiedFiles();
-      const specItemModified = modifiedFiles.some(f => f.name.toLowerCase().includes('spec_item'));
-      const propItemModified = modifiedFiles.some(f => f.name.toLowerCase().includes('propitem'));
-      
-      if (specItemModified && propItemModified) {
-        console.log("Beide Dateien (Spec_Item.txt und propItem.txt.txt) werden gespeichert");
-      } else if (specItemModified) {
-        console.log("Nur Spec_Item.txt wird gespeichert");
-      } else if (propItemModified) {
-        console.log("Nur propItem.txt.txt wird gespeichert");
-      }
-      
-      // Speichern
-      toast.promise(saveAllModifiedFiles(), {
-        loading: "Speichere aktuellen Tab...",
-        success: `Tab ${selectedItem.name || selectedItem.id} gespeichert`,
-        error: "Fehler beim Speichern des Tabs"
-      });
-      
-      // Tab als nicht mehr modifiziert markieren nach dem Speichern
+      // Tab als nicht mehr modifiziert markieren
       setOpenTabs(prevTabs => {
         const tabIndex = prevTabs.findIndex(tab => selectedItem && tab.item.id === selectedItem.id);
         if (tabIndex === -1) return prevTabs;
@@ -210,45 +196,55 @@ export const useTabs = (
           ...prevTabs.slice(tabIndex + 1)
         ];
       });
-      
-      return saveAllModifiedFiles();
+
+      toast.success(`Tab ${selectedItem.name || selectedItem.id} gespeichert`);
+      return true;
+    } catch (error) {
+      console.error("Fehler beim Speichern des Tabs:", error);
+      toast.error("Fehler beim Speichern des Tabs");
+      return false;
     }
-    
-    return Promise.resolve(false);
   }, [selectedItem]);
   
   // Alle Tabs speichern
-  const saveAllTabs = useCallback((fileData: any) => {
-    // Sicherstellen, dass sowohl Spec_Item.txt als auch propItem.txt.txt aktualisiert werden
-    if (fileData) {
-      ensurePropItemConsistency(fileData);
+  const saveAllTabs = useCallback(async (itemEditor: any) => {
+    if (!itemEditor?.saveChanges) {
+      console.log("Keine saveChanges Funktion verfügbar");
+      return false;
     }
+
+    const modifiedTabs = openTabs.filter(tab => tab.modified);
     
-    const modifiedTabsCount = openTabs.filter(tab => tab.modified).length;
-    
-    if (modifiedTabsCount === 0) {
+    if (modifiedTabs.length === 0) {
       toast.info("Keine modifizierten Tabs zum Speichern");
-      return Promise.resolve(false);
+      return false;
     }
-    
-    // Speichern
-    toast.promise(saveAllModifiedFiles(), {
-      loading: `Speichere ${modifiedTabsCount} modifizierte Tabs...`,
-      success: `${modifiedTabsCount} Tabs gespeichert`,
-      error: "Fehler beim Speichern der Tabs"
-    });
-    
-    // Alle Tabs als nicht mehr modifiziert markieren
-    setOpenTabs(prevTabs => prevTabs.map(tab => ({
-      ...tab,
-      modified: false
-    })));
-    
-    return saveAllModifiedFiles();
-  }, [openTabs]);
+
+    try {
+      // Speichere die Änderungen für jeden modifizierten Tab
+      for (const tab of modifiedTabs) {
+        setSelectedItem(tab.item); // Setze das aktuelle Item
+        await itemEditor.saveChanges(); // Speichere die Änderungen
+      }
+
+      // Alle Tabs als nicht mehr modifiziert markieren
+      setOpenTabs(prevTabs => prevTabs.map(tab => ({
+        ...tab,
+        modified: false
+      })));
+
+      toast.success(`${modifiedTabs.length} Tabs gespeichert`);
+      return true;
+    } catch (error) {
+      console.error("Fehler beim Speichern der Tabs:", error);
+      toast.error("Fehler beim Speichern der Tabs");
+      return false;
+    }
+  }, [openTabs, setSelectedItem]);
   
   return {
     openTabs,
+    setOpenTabs,
     addTab,
     updateTabItem,
     handleCloseTab,

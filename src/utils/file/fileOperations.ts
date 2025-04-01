@@ -207,67 +207,12 @@ export const trackPropItemChanges = async (
     // Sammle Informationen für den Log
     console.log(`PropItem ID: ${propItemId}, Name: "${displayName}", Beschreibung: "${description}"`);
     
-    // Hilfsfunktion zum Erzwingen einer Änderung
-    const ensureChange = (value: string) => {
-      // Füge ein unsichtbares Zeichen am Ende hinzu, um Änderungen zu erzwingen
-      // Unicode Zero-Width Space (U+200B)
-      return value + '\u200B';
-    };
-    
-    // Für den Fall, dass keine tatsächliche Änderung gemacht wurde,
-    // verwenden wir ein unsichtbares Zeichen am Ende, um eine tatsächliche Änderung zu erzwingen
-    let modifiedDisplayName = displayName;
-    let shouldForceChange = false;
-    
-    // Überprüfe, ob wir eine vorhandene Datei haben
-    try {
-      console.log("Prüfe existierenden Wert in propItem.txt.txt...");
-      const response = await fetch("/resource/propItem.txt.txt");
-      
-      if (response.ok) {
-        const content = await response.text();
-        if (content) {
-          const lines = content.split(/\r?\n/);
-          // Extrahiere die Basis-ID
-          const baseIdMatch = propItemId.match(/(\d+)$/);
-          const baseId = baseIdMatch ? baseIdMatch[1] : "";
-          const nameIdToMatch = `IDS_PROPITEM_TXT_${baseId.padStart(6, '0')}`;
-          
-          console.log(`Suche nach Zeile mit ${nameIdToMatch}...`);
-          const existingLine = lines.find(line => line.startsWith(nameIdToMatch + '\t'));
-          
-          if (existingLine) {
-            const parts = existingLine.split('\t');
-            if (parts.length >= 2) {
-              console.log(`Existierender Wert gefunden: "${parts[1]}"`);
-              
-              if (parts[1] === displayName) {
-                // Der aktuelle Name ist identisch mit dem gespeicherten, füge unsichtbares Zeichen hinzu
-                console.log(`Erzwinge Änderung für ${nameIdToMatch} (aktueller Wert = gespeicherter Wert)`);
-                modifiedDisplayName = ensureChange(displayName);
-                shouldForceChange = true;
-              }
-            }
-          } else {
-            console.log(`Keine Zeile mit ${nameIdToMatch} gefunden.`);
-          }
-        }
-      } else {
-        console.warn(`Konnte propItem.txt.txt nicht laden (Status ${response.status})`);
-      }
-    } catch (error) {
-      console.warn("Fehler beim Überprüfen der existierenden propItem.txt.txt:", error);
-    }
-    
-    console.log(`Finaler displayName: ${shouldForceChange ? "geändert mit unsichtbarem Zeichen" : "unverändert"} - "${modifiedDisplayName}"`);
-    
     // Erstelle das Item-Objekt explizit
     const itemObj = {
       id: propItemId,
       name: itemName,
-      displayName: modifiedDisplayName, // Verwende modifizierten Namen
+      displayName: displayName,
       description: description,
-      // Stelle sicher, dass diese Felder existieren (Fall sie später benötigt werden)
       data: {
         szName: propItemId
       }
@@ -283,19 +228,14 @@ export const trackPropItemChanges = async (
       isPartial: true,
       sourceItemId: itemId,
       propItemId,
-      displayName: modifiedDisplayName, // Verwende modifizierten Namen
+      displayName,
       description,
       lastModified: Date.now(),
-      shouldSaveImmediately: true, // Dies bewirkt, dass savePropItemChanges sofort aufgerufen wird
+      shouldSaveImmediately: false, // Änderung: Speichern wird verzögert
       itemsToSave: [itemObj]
     });
     
-    // Direkte Speicherung für Tests
-    console.log("Direkte Speicherung der PropItem-Änderungen...");
-    const success = await savePropItemChanges([itemObj]);
-    console.log(`Direkte Speicherung erfolgreich: ${success}`);
-    
-    console.log(`PropItem Änderungen gespeichert für ${propItemId}`);
+    console.log(`PropItem Änderungen für ${propItemId} zur späteren Speicherung vorgemerkt`);
   } catch (error) {
     console.error("Fehler beim Tracking von propItem Änderungen:", error);
   }

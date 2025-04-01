@@ -4,6 +4,7 @@ import { trackModifiedFile, trackPropItemChanges } from "../utils/file/fileOpera
 import { updateItemIdInDefine } from "../utils/file/defineItemParser";
 import { updateModelFileNameInMdlDyna } from "../utils/file/mdlDynaParser";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
 // Error Boundary Komponente für Fehlerbehandlung bei dynamischen Imports
 class ErrorBoundary extends Component<
@@ -100,157 +101,66 @@ interface ResourceEditorProps {
 // Performance-Optimierung: Memoized Editor-Komponente
 const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceEditorProps) => {
   const [localItem, setLocalItem] = useState<ResourceItem>(item);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
-  // Performance-Optimierung: Nur bei tatsächlicher Änderung updaten
+  // Aktualisiere localItem wenn sich das übergebene Item ändert
   useEffect(() => {
-    // Deep comparison der Inhalte
-    if (JSON.stringify(localItem) !== JSON.stringify(item)) {
-      setLocalItem(item);
-    }
+    setLocalItem(item);
   }, [item]);
-  
-  // Performance-Optimierung: Memoized handleDataChange
+
+  // Funktion zum Speichern der Änderungen
+  const handleSave = async () => {
+    try {
+      if (hasUnsavedChanges) {
+        // Speichere die Änderungen in propItem.txt.txt
+        if (localItem.displayName !== undefined || localItem.description !== undefined) {
+          await trackPropItemChanges(
+            localItem.id,
+            localItem.name,
+            localItem.displayName || localItem.name,
+            localItem.description || ''
+          );
+        }
+        
+        // Aktualisiere den Parent-State
+        onUpdateItem(localItem);
+        
+        // Setze den Änderungsstatus zurück
+        setHasUnsavedChanges(false);
+        
+        console.log("Änderungen erfolgreich gespeichert");
+      }
+    } catch (error) {
+      console.error("Fehler beim Speichern der Änderungen:", error);
+    }
+  };
+
+  // Funktion zum Verarbeiten von Änderungen ohne direkte Speicherung
   const handleDataChange = useMemo(() => {
-    return async (field: string, value: string | number | boolean) => {
+    return (field: string, value: string | number | boolean) => {
       // If not in edit mode, don't allow changes
       if (!editMode) {
-        console.warn("Änderungen im Lesemodus ignoriert");
+        console.log('Änderungen im View-Modus nicht erlaubt');
         return;
       }
 
-      let updatedItem = null;
-      
-      // Alte Werte für Protokollierung speichern
-      const oldValues = {
-        displayName: localItem.displayName,
-        description: localItem.description
-      };
+      let updatedItem: ResourceItem = { ...localItem };
 
+      // Aktualisiere das entsprechende Feld
       if (field === 'displayName') {
         updatedItem = {
           ...localItem,
           displayName: value as string
         };
-        
-        // Ausführliches Logging für die Nachverfolgung von Änderungen
-        console.log(`Änderung des Anzeigenamens für Item ${localItem.id}`);
-        console.log(`  Von: "${localItem.displayName || ''}" → Nach: "${value}"`);
-        
-        // Verfolge Änderungen in propItem.txt.txt und stets sicher, dass beide Dateien aktualisiert werden
-        try {
-          // Markiere beide Dateien als modifiziert
-          await trackPropItemChanges(
-            localItem.id, 
-            localItem.name, 
-            value as string, 
-            localItem.description || ''
-          );
-          
-          // Explizit beide Dateien als modifiziert markieren
-          await trackModifiedFile("Spec_Item.txt", JSON.stringify({
-            ...localItem,
-            displayName: value as string,
-            isSpecItemFile: true
-          }), {
-            containsDisplayNameChanges: true,
-            relatedItemId: localItem.id,
-            oldValue: localItem.displayName || '',
-            newValue: value as string
-          });
-          
-          // Direkt markItemAsModified aufrufen, um das Item im Cache zu aktualisieren
-          try {
-            const { markItemAsModified } = require('../utils/file/propItemUtils');
-            markItemAsModified(
-              localItem.id,
-              value as string,
-              localItem.description || ''
-            );
-          } catch (importError) {
-            console.warn("Konnte markItemAsModified nicht importieren:", importError);
-          }
-          
-          console.log(`Name für Item ${localItem.id} wurde aktualisiert und in beiden Dateien verfolgt`);
-        } catch (trackError) {
-          console.error("Fehler beim Verfolgen von Änderungen in beiden Dateien:", trackError);
-        }
+        console.log(`Anzeigename aktualisiert: "${value}"`);
       } else if (field === 'description') {
         updatedItem = {
           ...localItem,
           description: value as string
         };
-        
-        // Ausführliches Logging für die Nachverfolgung von Änderungen
-        console.log(`Änderung der Beschreibung für Item ${localItem.id}`);
-        console.log(`  Von: "${(localItem.description || '').substring(0, 30)}${(localItem.description || '').length > 30 ? '...' : ''}"`);
-        console.log(`  Nach: "${(value as string).substring(0, 30)}${(value as string).length > 30 ? '...' : ''}"`);
-        
-        // Track propItem.txt.txt modification when description changes
-        try {
-          await trackPropItemChanges(
-            localItem.id, 
-            localItem.name, 
-            localItem.displayName || '', 
-            value as string
-          );
-          
-          // Explizit beide Dateien als modifiziert markieren
-          await trackModifiedFile("Spec_Item.txt", JSON.stringify({
-            ...localItem,
-            description: value as string,
-            isSpecItemFile: true
-          }), {
-            containsDescriptionChanges: true,
-            relatedItemId: localItem.id,
-            oldValue: (localItem.description || '').substring(0, 50),
-            newValue: (value as string).substring(0, 50)
-          });
-          
-          // Direkt markItemAsModified aufrufen, um das Item im Cache zu aktualisieren
-          try {
-            const { markItemAsModified } = require('../utils/file/propItemUtils');
-            markItemAsModified(
-              localItem.id,
-              localItem.displayName || '',
-              value as string
-            );
-          } catch (importError) {
-            console.warn("Konnte markItemAsModified nicht importieren:", importError);
-          }
-          
-          console.log(`Beschreibung für Item ${localItem.id} wurde aktualisiert und in beiden Dateien verfolgt`);
-        } catch (trackError) {
-          console.error("Fehler beim Verfolgen von Änderungen in beiden Dateien:", trackError);
-        }
-      } else if (field === 'itemId') {
-        // Special handling for item ID changes (defineItem.h updates)
-        const defineName = localItem.data.dwID as string;
-        const success = updateItemIdInDefine(defineName, value as string);
-        
-        if (success) {
-          toast.success(`Updated item ID in defineItem.h`);
-        } else {
-          toast.error(`Failed to update item ID in defineItem.h`);
-        }
-        
-        // This doesn't directly modify the ResourceItem data, as itemId is not stored in it
-        // It's retrieved from defineItem.h when needed
-        updatedItem = { ...localItem };
-      } else if (field === 'modelFileName') {
-        // Special handling for model filename changes (mdlDyna.inc updates)
-        const defineName = localItem.data.dwID as string;
-        const success = updateModelFileNameInMdlDyna(defineName, value as string);
-        
-        if (success) {
-          toast.success(`Updated model filename in mdlDyna.inc`);
-        } else {
-          toast.error(`Failed to update model filename in mdlDyna.inc`);
-        }
-        
-        // This doesn't directly modify the ResourceItem data, as modelFileName is not stored in it
-        // It's retrieved from mdlDyna.inc when needed
-        updatedItem = { ...localItem };
+        console.log(`Beschreibung aktualisiert`);
       } else {
+        // Für andere Felder, aktualisiere data
         updatedItem = {
           ...localItem,
           data: {
@@ -258,31 +168,16 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
             [field]: value
           }
         };
-        
-        // Track appropriate file modification based on field
-        if (field.startsWith('dw') || field.startsWith('f')) {
-          // These typically go in Spec_Item.txt
-          await trackModifiedFile("Spec_Item.txt", JSON.stringify({
-            ...localItem,
-            data: {
-              ...localItem.data,
-              [field]: value
-            },
-            isSpecItemFile: true
-          }));
-        } else if (field.includes('Model') || field.includes('Texture')) {
-          // These might be related to mdlDyna.inc
-          await trackModifiedFile("mdlDyna.inc", `Visual property ${field} updated for item ${localItem.id}`);
-        } else if (field.includes('Sound')) {
-          // Sound-related fields
-          await trackModifiedFile("Sound.txt", `Sound property ${field} updated for item ${localItem.id}`);
-        }
       }
-      
+
+      // Aktualisiere den lokalen State
       setLocalItem(updatedItem);
-      onUpdateItem(updatedItem, field, field === 'displayName' ? oldValues.displayName : oldValues.description);
+      setHasUnsavedChanges(true);
+
+      // Benachrichtige den Parent über die Änderungen
+      onUpdateItem(updatedItem);
     };
-  }, [editMode, localItem, onUpdateItem]);
+  }, [localItem, editMode, onUpdateItem]);
   
   // Performance-Optimierung: Memoized handleEffectChange
   const handleEffectChange = useMemo(() => {
@@ -422,6 +317,17 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
           <SetEffectsSection item={localItem} />
         </Suspense>
       </ErrorBoundary>
+      
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-cyrus-blue">
+          {localItem.displayName || localItem.name || 'Unnamed Item'}
+        </h1>
+        {hasUnsavedChanges && (
+          <Button onClick={handleSave} className="bg-cyrus-blue hover:bg-cyrus-blue-dark">
+            Save Changes
+          </Button>
+        )}
+      </div>
     </div>
   );
 });

@@ -33,6 +33,8 @@ export const useItemEditor = ({
   setOpenTabs
 }: ItemEditorProps) => {
   const [editMode, setEditMode] = useState(false);
+  const [item, setItem] = useState<ResourceItem | null>(selectedItem);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
   // Cache für schnellen Zugriff auf Items nach ID aktualisieren
   useMemo(() => {
@@ -45,98 +47,39 @@ export const useItemEditor = ({
     }
   }, [fileData]);
   
-  // Performance-Optimierung: handleUpdateItem memoisieren
-  const handleUpdateItem = async (updatedItem: any) => {
-    console.log('Aktualisiere Item:', updatedItem);
-    
-    // Kombiniere das ausgewählte Item mit den aktualisierten Werten
-    const mergedItem = {
-      ...selectedItem,
-      ...updatedItem
-    };
-    
-    // Aktualisiere den Namen und die Beschreibung in PropItem.txt.txt, falls geändert
-    if (
-      (updatedItem.displayName !== undefined && updatedItem.displayName !== selectedItem?.displayName) ||
-      (updatedItem.description !== undefined && updatedItem.description !== selectedItem?.description)
-    ) {
-      console.log('PropItem Informationen ändern sich, aktualisiere PropItem.txt.txt');
-      
-      try {
-        // Verwende updatePropItemProperties, um die Änderungen zu verfolgen
-        const propItemUpdated = await updatePropItemProperties(
-          mergedItem,
-          updatedItem.displayName || selectedItem?.displayName || mergedItem.name,
-          updatedItem.description || selectedItem?.description || ''
-        );
-        
-        console.log('PropItem Eigenschaften aktualisiert:', propItemUpdated);
-      } catch (error) {
-        console.error('Fehler beim Aktualisieren der PropItem Eigenschaften:', error);
-      }
-    }
-    
+  // Funktion zum Aktualisieren eines Items
+  const handleUpdateItem = useCallback((updatedItem: ResourceItem) => {
+    if (!fileData || !selectedItem) return;
+
     // Aktualisiere das Item im fileData
-    if (fileData && fileData.items) {
-      // Finde den Index des zu aktualisierenden Items
-      const itemIndex = fileData.items.findIndex((item: any) => item.id === mergedItem.id);
-      
-      if (itemIndex !== -1) {
-        // Erstelle eine Kopie des fileData
-        const updatedFileData = { ...fileData };
-        
-        // Erstelle eine Kopie des Items-Arrays
-        updatedFileData.items = [...fileData.items];
-        
-        // Aktualisiere das Item
-        updatedFileData.items[itemIndex] = mergedItem;
-        
-        // Setze das aktualisierte fileData
-        setFileData(updatedFileData);
-        
-        // Aktualisiere auch das ausgewählte Item
-        setSelectedItem(mergedItem);
-        
-        console.log('Item im fileData aktualisiert:', mergedItem);
-        
-        // Markiere die Datei als geändert
-        trackModifiedFile('Spec_Item.txt', JSON.stringify({
-          ...updatedFileData,
-          originalContent: fileData.originalContent
-        }));
-        
-        console.log('Datei als modifiziert markiert');
-      } else {
-        console.warn('Item nicht im fileData gefunden:', mergedItem.id);
-      }
-    } else {
-      console.warn('Kein fileData oder items vorhanden');
-    }
-  };
-  
-  // Performance-Optimierung: handleSelectItem memoisieren
-  const handleSelectItem = useCallback((item: ResourceItem, showSettings: boolean, showToDoPanel: boolean) => {
-    if (showSettings || showToDoPanel) return;
-    
-    // Vor der Auswahl den UndoState speichern
+    const updatedItems = fileData.items.map((item: ResourceItem) =>
+      item.id === updatedItem.id ? updatedItem : item
+    );
+
+    // Aktualisiere fileData
+    setFileData({
+      ...fileData,
+      items: updatedItems
+    });
+
+    // Aktualisiere den Tab
+    updateTabItem(updatedItem);
+
+    // Markiere Änderungen als nicht gespeichert
+    setHasUnsavedChanges(true);
+
+    // Speichere den Zustand für Undo/Redo
     saveUndoState();
-    
-    // Performance-Optimierung: Wenn das Item bereits ausgewählt ist, nichts tun
-    if (selectedItem && selectedItem.id === item.id) return;
-    
-    // Priorität mit queueMicrotask erhöhen
-    queueMicrotask(() => {
-      setSelectedItem(item);
-    });
-  }, [selectedItem, setSelectedItem, saveUndoState]);
+  }, [fileData, selectedItem, setFileData, updateTabItem, saveUndoState]);
   
-  // Performance-Optimierung: handleToggleEditMode memoisieren
+  // Funktion zum Auswählen eines Items
+  const handleSelectItem = useCallback((item: ResourceItem) => {
+    setSelectedItem(item);
+  }, [setSelectedItem]);
+  
+  // Funktion zum Umschalten des Edit-Modus
   const handleToggleEditMode = useCallback(() => {
-    setEditMode(prevMode => {
-      const newMode = !prevMode;
-      toast.info(newMode ? "Switched to Edit mode" : "Switched to View mode");
-      return newMode;
-    });
+    setEditMode(prev => !prev);
   }, []);
 
   // Cache invalidieren wenn sich fileData ändert
@@ -144,50 +87,65 @@ export const useItemEditor = ({
     cacheNeedsUpdate = true;
   }, [fileData]);
 
-  // Ändere displayName und speichere die Änderung
-  const handleDisplayNameChange = async (newDisplayName: string) => {
-    if (!selectedItem) return;
-    setSelectedItem({ ...selectedItem, displayName: newDisplayName });
-    console.log("Speichere den neuen Display-Namen:", newDisplayName);
-    try {
-      await trackPropItemChanges(
-        selectedItem.id,
-        selectedItem.name,
-        newDisplayName,
-        selectedItem.description || ''
-      );
-      console.log("PropItem-Änderungen erfolgreich gespeichert");
-    } catch (error) {
-      console.error("Fehler beim Speichern der PropItem-Änderungen:", error);
-    }
-  };
+  // Ändere displayName ohne direkte Speicherung
+  const handleDisplayNameChange = useCallback((newDisplayName: string) => {
+    setItem(prevItem => ({
+      ...prevItem,
+      displayName: newDisplayName
+    }));
+    setHasUnsavedChanges(true);
+    console.log(`Anzeigename im State aktualisiert: "${newDisplayName}"`);
+  }, []);
 
-  // Ändere description und speichere die Änderung
-  const handleDescriptionChange = async (newDescription: string) => {
-    if (!selectedItem) return;
-    setSelectedItem({ ...selectedItem, description: newDescription });
-    console.log("Speichere die neue Beschreibung:", newDescription);
-    
+  // Ändere description ohne direkte Speicherung
+  const handleDescriptionChange = useCallback((newDescription: string) => {
+    setItem(prevItem => ({
+      ...prevItem,
+      description: newDescription
+    }));
+    setHasUnsavedChanges(true);
+    console.log(`Beschreibung im State aktualisiert`);
+  }, []);
+
+  // Funktion zum Speichern von Änderungen
+  const saveChanges = useCallback(async () => {
+    if (!selectedItem || !hasUnsavedChanges) return;
+
     try {
-      // Die Funktion trackPropItemChanges wird aufgerufen, um PropItem.txt.txt zu aktualisieren
+      // Speichere die Änderungen in der Datei
       await trackPropItemChanges(
         selectedItem.id,
         selectedItem.name,
         selectedItem.displayName || selectedItem.name,
-        newDescription
+        selectedItem.description || ''
       );
-      console.log("PropItem-Änderungen erfolgreich gespeichert");
+
+      // Markiere Änderungen als gespeichert
+      setHasUnsavedChanges(false);
+
+      // Aktualisiere den Tab-Status
+      setOpenTabs(prevTabs => prevTabs.map(tab =>
+        tab.item.id === selectedItem.id
+          ? { ...tab, modified: false }
+          : tab
+      ));
+
+      return true;
     } catch (error) {
-      console.error("Fehler beim Speichern der PropItem-Änderungen:", error);
+      console.error("Fehler beim Speichern der Änderungen:", error);
+      throw error;
     }
-  };
+  }, [selectedItem, hasUnsavedChanges, setOpenTabs]);
 
   return {
     editMode,
+    item,
+    hasUnsavedChanges,
     handleUpdateItem,
     handleSelectItem,
     handleToggleEditMode,
     handleDisplayNameChange,
-    handleDescriptionChange
+    handleDescriptionChange,
+    saveChanges
   };
 };

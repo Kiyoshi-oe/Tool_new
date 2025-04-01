@@ -5,6 +5,7 @@ import { parsePropItemFile } from "../utils/file/propItemUtils";
 import { loadDefineItemFile } from "../utils/file/defineItemParser";
 import { loadMdlDynaFile } from "../utils/file/mdlDynaParser";
 import { toast } from "sonner";
+import { parseSpecItemFile } from "../utils/file/specItemParser";
 
 // Definiere den LoadingStatus-Typ
 type LoadingStatus = 'idle' | 'loading' | 'partial' | 'complete' | 'error';
@@ -111,6 +112,7 @@ export const useFileLoader = (
   const [specItemFullyLoaded, setSpecItemFullyLoaded] = useState(false);
   const [propItemFullyLoaded, setPropItemFullyLoaded] = useState(false);
   const [initialPropItemContent, setInitialPropItemContent] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   
   // Load additional files when the component mounts
   useEffect(() => {
@@ -446,6 +448,10 @@ export const useFileLoader = (
 
   // Hauptfunktion zum Laden der Datei mit Caching-Unterstützung
   const handleLoadFile = async (content: string, propItemContent?: string) => {
+    setIsLoading(true);
+    setLoadingStatus('loading');
+    setLoadProgress(0);
+
     try {
       if (!content || content.trim() === '') {
         toast.error("Die Datei ist leer oder wurde nicht korrekt geladen");
@@ -579,6 +585,8 @@ export const useFileLoader = (
       console.error("Error in handleLoadFile:", error);
       setLoadingStatus('error');
       toast.error("Fehler beim Laden der Datei: " + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -618,6 +626,10 @@ export const useFileLoader = (
 
   // Implementierung der loadDefaultFiles-Funktion
   const loadDefaultFiles = async () => {
+    setIsLoading(true);
+    setLoadingStatus('loading');
+    setLoadProgress(0);
+
     try {
       console.log("Loading default files...");
       
@@ -673,15 +685,18 @@ export const useFileLoader = (
       console.error("Error loading default files:", error);
       setLoadingStatus('error');
       toast.error("Fehler beim Laden der Standarddateien");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return {
     fileData,
+    setFileData,
     handleLoadFile,
     loadDefaultFiles,
     loadingStatus,
     loadProgress,
-    isLoading: loadingStatus === 'loading' || loadingStatus === 'partial'
+    isLoading
   };
 };
