@@ -111,7 +111,7 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
   
   // Performance-Optimierung: Memoized handleDataChange
   const handleDataChange = useMemo(() => {
-    return (field: string, value: string | number | boolean) => {
+    return async (field: string, value: string | number | boolean) => {
       // If not in edit mode, don't allow changes
       if (!editMode) {
         console.warn("Änderungen im Lesemodus ignoriert");
@@ -139,7 +139,7 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
         // Verfolge Änderungen in propItem.txt.txt und stets sicher, dass beide Dateien aktualisiert werden
         try {
           // Markiere beide Dateien als modifiziert
-          trackPropItemChanges(
+          await trackPropItemChanges(
             localItem.id, 
             localItem.name, 
             value as string, 
@@ -147,7 +147,7 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
           );
           
           // Explizit beide Dateien als modifiziert markieren
-          trackModifiedFile("Spec_Item.txt", JSON.stringify({
+          await trackModifiedFile("Spec_Item.txt", JSON.stringify({
             ...localItem,
             displayName: value as string,
             isSpecItemFile: true
@@ -187,7 +187,7 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
         
         // Track propItem.txt.txt modification when description changes
         try {
-          trackPropItemChanges(
+          await trackPropItemChanges(
             localItem.id, 
             localItem.name, 
             localItem.displayName || '', 
@@ -195,7 +195,7 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
           );
           
           // Explizit beide Dateien als modifiziert markieren
-          trackModifiedFile("Spec_Item.txt", JSON.stringify({
+          await trackModifiedFile("Spec_Item.txt", JSON.stringify({
             ...localItem,
             description: value as string,
             isSpecItemFile: true
@@ -262,7 +262,7 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
         // Track appropriate file modification based on field
         if (field.startsWith('dw') || field.startsWith('f')) {
           // These typically go in Spec_Item.txt
-          trackModifiedFile("Spec_Item.txt", JSON.stringify({
+          await trackModifiedFile("Spec_Item.txt", JSON.stringify({
             ...localItem,
             data: {
               ...localItem.data,
@@ -272,10 +272,10 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
           }));
         } else if (field.includes('Model') || field.includes('Texture')) {
           // These might be related to mdlDyna.inc
-          trackModifiedFile("mdlDyna.inc", `Visual property ${field} updated for item ${localItem.id}`);
+          await trackModifiedFile("mdlDyna.inc", `Visual property ${field} updated for item ${localItem.id}`);
         } else if (field.includes('Sound')) {
           // Sound-related fields
-          trackModifiedFile("Sound.txt", `Sound property ${field} updated for item ${localItem.id}`);
+          await trackModifiedFile("Sound.txt", `Sound property ${field} updated for item ${localItem.id}`);
         }
       }
       

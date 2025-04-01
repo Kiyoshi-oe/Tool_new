@@ -82,7 +82,7 @@ function createWindow() {
     checkServerRunning(devServerUrl).then(isRunning => {
       if (isRunning) {
         // Server läuft, lade die App
-        mainWindow.loadURL(devServerUrl).catch(err => {
+    mainWindow.loadURL(devServerUrl).catch(err => {
           handleLoadError(err);
         });
       } else {
@@ -133,8 +133,8 @@ function createWindow() {
           mainWindow.loadFile(altIndexPath);
         } else {
           // Zeige eine Fehlermeldung an, wenn kein Fallback verfügbar ist
-          dialog.showErrorBox(
-            'Laden fehlgeschlagen',
+        dialog.showErrorBox(
+          'Laden fehlgeschlagen',
             `Konnte weder Dev-Server noch lokale HTML-Datei laden. 
              URL: ${devServerUrl}, 
              Fehler: ${err.message}
@@ -172,236 +172,118 @@ function createWindow() {
     );
   });
 
-  // Handle IPC events for saving individual files
-  ipcMain.handle('save-file', async (_, fileName, content, savePath) => {
+  // Handle file saving
+  ipcMain.handle('save-file', async (event, fileName, content, savePath) => {
     try {
-      console.log(`Electron: Speichere Datei ${fileName} nach ${savePath || 'Standard-Ressourcenordner'}`);
-      console.log(`Inhaltslänge: ${content ? content.length : 0} Zeichen`);
+      // Log the request
+      console.log(`save-file requested: fileName=${fileName}, savePath=${savePath}, content length=${content.length}`);
       
-      // Zusätzliche Überprüfung für leeren Inhalt
-      if (!content || content.length === 0) {
-        console.error(`WARNUNG: Leerer Inhalt für ${fileName}`);
-        return { 
-          success: false, 
-          error: 'Leerer Dateiinhalt' 
-        };
+      // Ensure the resource directory exists
+      const resourceDir = path.join(__dirname, '../resource');
+      if (!fs.existsSync(resourceDir)) {
+        fs.mkdirSync(resourceDir, { recursive: true });
+        console.log(`Created resource directory: ${resourceDir}`);
       }
       
-      // Inhaltsdiagnose für .txt Dateien
-      if (fileName.endsWith('.txt') && content) {
-        const firstFewChars = content.substring(0, 100).replace(/\n/g, '\\n');
-        console.log(`Inhalt beginnt mit: ${firstFewChars}...`);
-        console.log(`Zeilen: ${content.split('\n').length}`);
-      }
-      
-      // Determine the actual path to save to
-      let finalPath;
-      
-      if (savePath) {
-        // Prüfe, ob es sich um einen der Standard-Ordnernamen handelt
-        if (savePath === 'resource' || savePath === 'resources') {
-          finalPath = path.join(app.getAppPath(), 'public', 'resource');
-        } else if (savePath === 'userData') {
-          finalPath = app.getPath('userData');
-        } else if (savePath === 'documents') {
-          finalPath = app.getPath('documents');
-        } else if (!path.isAbsolute(savePath)) {
-          // Wenn es ein relativer Pfad ist, mache ihn absolut
-          finalPath = path.join(app.getAppPath(), savePath);
-        } else {
-          // Ansonsten verwende den Pfad direkt
-          finalPath = savePath;
-        }
+      // Determine the actual save path
+      let actualPath;
+      if (savePath.includes(':\\') || savePath.startsWith('/')) {
+        // Absolute path
+        actualPath = savePath;
       } else {
-        // Default path is the resource folder in the app
-        finalPath = path.join(app.getAppPath(), 'public', 'resource');
+        // Relative path - join with the app path
+        actualPath = path.join(__dirname, '..', savePath);
       }
       
-      console.log(`Auflösung des Speicherpfads: ${finalPath}`);
-      console.log(`App-Pfad: ${app.getAppPath()}`);
-      console.log(`Aktuelles Arbeitsverzeichnis: ${process.cwd()}`);
-      
-      // List available resources in the folder
-      try {
-        if (fs.existsSync(finalPath)) {
-          console.log("Vorhandene Dateien im Ressourcenordner:");
-          const files = fs.readdirSync(finalPath);
-          files.forEach(file => {
-            console.log(`- ${file}`);
-          });
-        }
-      } catch (listError) {
-        console.warn("Konnte Ordnerinhalt nicht auflisten:", listError);
+      // Ensure the directory exists
+      const saveDir = path.dirname(actualPath);
+      if (!fs.existsSync(saveDir)) {
+        fs.mkdirSync(saveDir, { recursive: true });
+        console.log(`Created directory: ${saveDir}`);
       }
       
-      // Make sure the directory exists
-      if (!fs.existsSync(finalPath)) {
-        try {
-          fs.mkdirSync(finalPath, { recursive: true });
-          console.log(`Verzeichnis erstellt: ${finalPath}`);
-        } catch (mkdirError) {
-          console.error(`Fehler beim Erstellen des Verzeichnisses ${finalPath}:`, mkdirError);
-          
-          // Try fallback to current working directory if app path fails
-          finalPath = path.join(process.cwd(), 'public', 'resource');
-          console.log(`Verwende Fallback-Pfad: ${finalPath}`);
-          
-          if (!fs.existsSync(finalPath)) {
-            try {
-              fs.mkdirSync(finalPath, { recursive: true });
-              console.log(`Fallback-Verzeichnis erstellt: ${finalPath}`);
-            } catch (fallbackError) {
-              console.error(`Fehler beim Erstellen des Fallback-Verzeichnisses ${finalPath}:`, fallbackError);
-              throw new Error(`Konnte Verzeichnis nicht erstellen: ${fallbackError.message}`);
-            }
-          }
-        }
-      }
+      // Write the file directly without backup
+      fs.writeFileSync(actualPath, content, 'utf8');
       
-      // Spezielle Behandlung für propItem.txt.txt
-      if (fileName === 'propItem.txt.txt') {
-        console.log(`Spezielle Behandlung für propItem.txt.txt aktiviert`);
-        
-        // Prüfen, ob die Datei bereits existiert, und wenn ja, Inhalte zusammenführen
-        const fullPath = path.join(finalPath, fileName);
-        if (fs.existsSync(fullPath)) {
-          try {
-            console.log(`Bestehende propItem.txt.txt gefunden, führe Inhalte zusammen`);
-            const existingContent = fs.readFileSync(fullPath, 'utf8');
-            
-            // Wir haben neue Einträge im Format "ID\tWert"
-            // Wir müssen sicherstellen, dass IDs nicht dupliziert werden
-            const existingLines = existingContent.split(/\r?\n/);
-            const newLines = content.split(/\r?\n/);
-            
-            // Erstelle eine Map von ID zu Wert aus dem bestehenden Inhalt
-            const entries = {};
-            existingLines.forEach(line => {
-              const parts = line.split('\t');
-              if (parts.length >= 2 && parts[0].trim().match(/IDS_PROPITEM_TXT_\d+/)) {
-                entries[parts[0].trim()] = parts[1].trim();
-              }
-            });
-            
-            // Aktualisiere oder füge neue Einträge hinzu
-            newLines.forEach(line => {
-              const parts = line.split('\t');
-              if (parts.length >= 2 && parts[0].trim().match(/IDS_PROPITEM_TXT_\d+/)) {
-                entries[parts[0].trim()] = parts[1].trim();
-              }
-            });
-            
-            // Erstelle den endgültigen Inhalt, sortiert nach ID
-            const finalLines = Object.entries(entries)
-              .sort((a, b) => {
-                const numA = parseInt(a[0].replace(/\D/g, ''), 10);
-                const numB = parseInt(b[0].replace(/\D/g, ''), 10);
-                return numA - numB;
-              })
-              .map(([id, value]) => `${id}\t${value}`);
-            
-            // Nutze Windows-Zeilenumbrüche für bessere Kompatibilität
-            content = finalLines.join('\r\n');
-            
-            console.log(`Zusammengeführte propItem.txt.txt hat ${finalLines.length} Einträge`);
-          } catch (mergeError) {
-            console.error(`Fehler beim Zusammenführen von propItem.txt.txt:`, mergeError);
-            // Verwende neuen Inhalt, wenn Zusammenführung fehlschlägt
-          }
-        }
-      }
+      // Log success
+      const stats = fs.statSync(actualPath);
+      console.log(`File saved: ${actualPath} (${stats.size} bytes)`);
       
-      // The full path including filename
-      const fullPath = path.join(finalPath, fileName);
-      console.log(`Speichere nach: ${fullPath}`);
-      
-      // Try using fs.access to check if we have write permissions
-      try {
-        if (fs.existsSync(finalPath)) {
-          fs.accessSync(finalPath, fs.constants.W_OK);
-          console.log(`Schreibrechte für Verzeichnis bestätigt: ${finalPath}`);
-        }
-      } catch (accessError) {
-        console.error(`Keine Schreibrechte für Verzeichnis ${finalPath}:`, accessError);
-        throw new Error(`Keine Schreibberechtigung: ${accessError.message}`);
-      }
-      
-      // Write the file with explicit error handling
-      try {
-        // Entferne den Backup-Code - Dateien direkt überschreiben
-        fs.writeFileSync(fullPath, content, { encoding: 'utf8', flag: 'w' });
-        console.log(`Datei erfolgreich nach ${fullPath} geschrieben`);
-        
-        // Verify the file was actually written
-        if (fs.existsSync(fullPath)) {
-          const stats = fs.statSync(fullPath);
-          console.log(`Dateigröße: ${stats.size} Bytes`);
-          
-          // Read back the first few bytes to verify content was written correctly
-          if (stats.size > 0) {
-            const buffer = Buffer.alloc(Math.min(stats.size, 100));
-            const fd = fs.openSync(fullPath, 'r');
-            fs.readSync(fd, buffer, 0, buffer.length, 0);
-            fs.closeSync(fd);
-            console.log(`Erste Bytes: ${buffer.toString().replace(/\n/g, '\\n')}`);
-          }
-          
-          // Super-sicher, dass Änderungen geschrieben wurden, indem wir explizit Pufferinhalt leeren
-          try {
-            fs.fsyncSync(fs.openSync(fullPath, 'r+'));
-            console.log("Dateisystem-Puffer geleert");
-          } catch (fsyncError) {
-            console.warn("Konnte Dateisystem-Puffer nicht leeren:", fsyncError);
-          }
-          
-          // Rückgabe des Erfolgs mit Pfad
-          return { 
-            success: true, 
-            path: fullPath,
-            size: stats.size,
-            timestamp: new Date().toISOString()
-          };
-        } else {
-          throw new Error(`Datei existiert nach dem Schreiben nicht: ${fullPath}`);
-        }
-      } catch (writeError) {
-        console.error(`FEHLER beim Schreiben der Datei: ${writeError.message}`);
-        
-        // Versuche es mit einem alternativen Speichermethode
-        try {
-          console.log("Versuche alternative Speichermethode...");
-          
-          // Verwende writeFile mit voller Fehlerrückmeldung
-          await fs.promises.writeFile(fullPath, content, { encoding: 'utf8' });
-          
-          if (fs.existsSync(fullPath)) {
-            const stats = fs.statSync(fullPath);
-            console.log(`Datei erfolgreich mit alternativer Methode gespeichert. Größe: ${stats.size} Bytes`);
-            
-            return { 
-              success: true, 
-              path: fullPath,
-              size: stats.size,
-              method: 'alternative'
-            };
-          }
-        } catch (altWriteError) {
-          console.error(`Auch alternative Speichermethode fehlgeschlagen: ${altWriteError.message}`);
-        }
-        
-        return { 
-          success: false, 
-          error: writeError.message || 'Unbekannter Fehler beim Schreiben der Datei',
-          fileName,
-          path: fullPath
-        };
-      }
+      return { 
+        success: true, 
+        path: actualPath,
+        size: stats.size
+      };
     } catch (error) {
-      console.error(`Allgemeiner Fehler beim Speichern von ${fileName}:`, error);
+      console.error('Error saving file:', error);
       return { 
         success: false, 
-        error: error.message || 'Unbekannter Fehler',
-        fileName
+        error: error.message,
+        stack: error.stack
+      };
+    }
+  });
+
+  // Handle file saving with specific encoding (for propItem.txt.txt)
+  ipcMain.handle('save-file-with-encoding', async (event, fileName, content, savePath, options) => {
+    try {
+      // Log the request
+      console.log(`save-file-with-encoding requested: fileName=${fileName}, savePath=${savePath}, encoding=${options?.encoding || 'default'}`);
+      
+      // Ensure the resource directory exists
+      const resourceDir = path.join(__dirname, '../resource');
+      if (!fs.existsSync(resourceDir)) {
+        fs.mkdirSync(resourceDir, { recursive: true });
+        console.log(`Created resource directory: ${resourceDir}`);
+      }
+      
+      // Determine the actual save path
+      let actualPath;
+      if (savePath.includes(':\\') || savePath.startsWith('/')) {
+        // Absolute path
+        actualPath = savePath;
+      } else {
+        // Relative path - join with the app path
+        actualPath = path.join(__dirname, '..', savePath);
+      }
+      
+      // Ensure the directory exists
+      const saveDir = path.dirname(actualPath);
+      if (!fs.existsSync(saveDir)) {
+        fs.mkdirSync(saveDir, { recursive: true });
+        console.log(`Created directory: ${saveDir}`);
+      }
+      
+      // Bestimme die zu verwendende Kodierung
+      let encoding = 'utf8';
+      if (options && options.encoding) {
+        if (options.encoding === 'latin1' || options.encoding === 'win1252' || options.useANSI) {
+          encoding = 'latin1'; // ANSI/Windows-1252 kompatibel
+          console.log(`Verwende ANSI-kompatible Kodierung (latin1) für ${fileName}`);
+        } else {
+          encoding = options.encoding;
+        }
+      }
+      
+      // Write the file with the specified encoding
+      fs.writeFileSync(actualPath, content, encoding);
+      
+      // Log success
+      const stats = fs.statSync(actualPath);
+      console.log(`File saved with encoding ${encoding}: ${actualPath} (${stats.size} bytes)`);
+      
+      return { 
+        success: true, 
+        path: actualPath,
+        size: stats.size,
+        encoding: encoding
+      };
+    } catch (error) {
+      console.error('Error saving file with encoding:', error);
+      return { 
+        success: false, 
+        error: error.message,
+        stack: error.stack
       };
     }
   });
@@ -453,77 +335,77 @@ function createWindow() {
           let finalContent = file.content;
           
           if (file.name === 'propItem.txt.txt' && fs.existsSync(path.join(finalPath, file.name))) {
-            try {
-              console.log(`Bestehende propItem.txt.txt gefunden, führe Inhalte zusammen`);
+          try {
+            console.log(`Bestehende propItem.txt.txt gefunden, führe Inhalte zusammen`);
               const existingContent = fs.readFileSync(path.join(finalPath, file.name), 'utf8');
-              
-              // Wir haben neue Einträge im Format "ID\tWert"
-              // Wir müssen sicherstellen, dass IDs nicht dupliziert werden
-              const existingLines = existingContent.split(/\r?\n/);
+            
+            // Wir haben neue Einträge im Format "ID\tWert"
+            // Wir müssen sicherstellen, dass IDs nicht dupliziert werden
+            const existingLines = existingContent.split(/\r?\n/);
               const newLines = file.content.split(/\r?\n/);
-              
-              // Erstelle eine Map von ID zu Wert aus dem bestehenden Inhalt
-              const entries = {};
-              existingLines.forEach(line => {
-                const parts = line.split('\t');
-                if (parts.length >= 2 && parts[0].trim().match(/IDS_PROPITEM_TXT_\d+/)) {
-                  entries[parts[0].trim()] = parts[1].trim();
-                }
-              });
-              
-              // Aktualisiere oder füge neue Einträge hinzu
-              newLines.forEach(line => {
-                const parts = line.split('\t');
-                if (parts.length >= 2 && parts[0].trim().match(/IDS_PROPITEM_TXT_\d+/)) {
-                  entries[parts[0].trim()] = parts[1].trim();
-                }
-              });
-              
-              // Erstelle den endgültigen Inhalt, sortiert nach ID
-              const finalLines = Object.entries(entries)
-                .sort((a, b) => {
-                  const numA = parseInt(a[0].replace(/\D/g, ''), 10);
-                  const numB = parseInt(b[0].replace(/\D/g, ''), 10);
-                  return numA - numB;
-                })
-                .map(([id, value]) => `${id}\t${value}`);
-              
-              // Nutze Windows-Zeilenumbrüche für bessere Kompatibilität
+            
+            // Erstelle eine Map von ID zu Wert aus dem bestehenden Inhalt
+            const entries = {};
+            existingLines.forEach(line => {
+              const parts = line.split('\t');
+              if (parts.length >= 2 && parts[0].trim().match(/IDS_PROPITEM_TXT_\d+/)) {
+                entries[parts[0].trim()] = parts[1].trim();
+              }
+            });
+            
+            // Aktualisiere oder füge neue Einträge hinzu
+            newLines.forEach(line => {
+              const parts = line.split('\t');
+              if (parts.length >= 2 && parts[0].trim().match(/IDS_PROPITEM_TXT_\d+/)) {
+                entries[parts[0].trim()] = parts[1].trim();
+              }
+            });
+            
+            // Erstelle den endgültigen Inhalt, sortiert nach ID
+            const finalLines = Object.entries(entries)
+              .sort((a, b) => {
+                const numA = parseInt(a[0].replace(/\D/g, ''), 10);
+                const numB = parseInt(b[0].replace(/\D/g, ''), 10);
+                return numA - numB;
+              })
+              .map(([id, value]) => `${id}\t${value}`);
+            
+            // Nutze Windows-Zeilenumbrüche für bessere Kompatibilität
               finalContent = finalLines.join('\r\n');
-              
-              console.log(`Zusammengeführte propItem.txt.txt hat ${finalLines.length} Einträge`);
-            } catch (mergeError) {
-              console.error(`Fehler beim Zusammenführen von propItem.txt.txt:`, mergeError);
-              // Verwende neuen Inhalt, wenn Zusammenführung fehlschlägt
-            }
+            
+            console.log(`Zusammengeführte propItem.txt.txt hat ${finalLines.length} Einträge`);
+          } catch (mergeError) {
+            console.error(`Fehler beim Zusammenführen von propItem.txt.txt:`, mergeError);
+            // Verwende neuen Inhalt, wenn Zusammenführung fehlschlägt
           }
+        }
           
           // The full path including filename
           const fullPath = path.join(finalPath, file.name);
           
           // Entferne den Backup-Code - Dateien direkt überschreiben
           fs.writeFileSync(fullPath, finalContent, { encoding: 'utf8', flag: 'w' });
-          
-          // Verify the file was actually written
-          if (fs.existsSync(fullPath)) {
-            const stats = fs.statSync(fullPath);
-            console.log(`Datei ${file.name} erfolgreich gespeichert. Größe: ${stats.size} Bytes`);
             
-            results.push({
+            // Verify the file was actually written
+            if (fs.existsSync(fullPath)) {
+              const stats = fs.statSync(fullPath);
+            console.log(`Datei ${file.name} erfolgreich gespeichert. Größe: ${stats.size} Bytes`);
+          
+          results.push({ 
               name: file.name,
-              success: true,
+            success: true, 
               path: fullPath,
               size: stats.size
-            });
+          });
           } else {
             throw new Error(`Datei existiert nach dem Schreiben nicht: ${fullPath}`);
           }
         } catch (fileError) {
           console.error(`Fehler beim Speichern von ${file.name}:`, fileError);
           
-          results.push({
+          results.push({ 
             name: file.name,
-            success: false,
+            success: false, 
             error: fileError.message || 'Unbekannter Fehler'
           });
         }
@@ -532,7 +414,7 @@ function createWindow() {
       // Prüfe, ob alle Dateien erfolgreich gespeichert wurden
       const allSuccessful = results.every(result => result.success);
       
-      return {
+      return { 
         success: allSuccessful,
         results,
         timestamp: new Date().toISOString()
@@ -540,8 +422,8 @@ function createWindow() {
     } catch (error) {
       console.error(`Allgemeiner Fehler beim Speichern aller Dateien:`, error);
       
-      return {
-        success: false,
+      return { 
+        success: false, 
         error: error.message || 'Unbekannter Fehler',
         timestamp: new Date().toISOString()
       };

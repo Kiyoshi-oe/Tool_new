@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { FileData, LogEntry, ResourceItem } from "../types/fileTypes";
 import { toast } from "sonner";
 import { trackModifiedFile, trackPropItemChanges } from "../utils/file/fileOperations";
+import { updatePropItemProperties } from "../utils/file/propItemUtils";
 
 export interface ItemEditorProps {
   fileData: any;
@@ -45,140 +46,73 @@ export const useItemEditor = ({
   }, [fileData]);
   
   // Performance-Optimierung: handleUpdateItem memoisieren
-  const handleUpdateItem = useCallback((updatedItem: ResourceItem, field?: string, oldValue?: any) => {
-    if (!fileData || !editMode) return;
-
-    console.log(`Aktualisiere Item ${updatedItem.id} (${updatedItem.name})`, `Feld: ${field || 'unbekannt'}`);
+  const handleUpdateItem = async (updatedItem: any) => {
+    console.log('Aktualisiere Item:', updatedItem);
     
-    // Finde das Item im fileData und aktualisiere es
-    const updatedItems = fileData.items.map(item => {
-      if (item.id === updatedItem.id) {
-        // Für displayName und description spezielles Handling, um Synchronisation zu gewährleisten
-        if (field === 'displayName' || field === 'description') {
-          console.log(`Ändere ${field} von "${oldValue || 'undefiniert'}" zu "${field === 'displayName' ? updatedItem.displayName : updatedItem.description}"`);
-          
-          // Stelle sicher, dass die Änderung in beiden Dateien verfolgt wird
-          try {
-            // Rufe beide Tracking-Funktionen auf, um die Änderungen in beiden Dateien zu verfolgen
-            trackPropItemChanges(
-              updatedItem.id,
-              updatedItem.name,
-              updatedItem.displayName || '',
-              updatedItem.description || ''
-            );
-            
-            // Importiere und rufe markItemAsModified auf, um das Item im Cache zu aktualisieren
-            try {
-              const { markItemAsModified } = require('../utils/file/propItemUtils');
-              markItemAsModified(
-                updatedItem.id,
-                updatedItem.displayName || '',
-                updatedItem.description || ''
-              );
-              console.log(`Item ${updatedItem.id} im modifiedItems-Cache markiert`);
-            } catch (importError) {
-              console.warn(`Konnte markItemAsModified nicht importieren:`, importError);
-            }
-          } catch (error) {
-            console.error(`Fehler beim Tracking von PropItem-Änderungen:`, error);
-          }
-        }
-        
-        // Aktualisiere das Item mit den neuen Werten
-        return {
-          ...item,
-          ...updatedItem
-        };
-      }
-      return item;
-    });
-
-    // Aktualisiere den fileData-Zustand
-    setFileData({
-      ...fileData,
-      items: updatedItems
-    });
-
-    // Aktualisiere auch den selectedItem-Zustand, falls nötig
-    if (selectedItem && selectedItem.id === updatedItem.id) {
-      setSelectedItem({
-        ...selectedItem,
-        ...updatedItem
-      });
-    }
-
-    // Aktualisiere auch die openTabs, falls das Item dort vorhanden ist
-    if (openTabs.length > 0) {
-      const updatedTabs = openTabs.map(tab => {
-        if (tab.item.id === updatedItem.id) {
-          return {
-            ...tab,
-            item: {
-              ...tab.item,
-              ...updatedItem
-            }
-          };
-        }
-        return tab;
-      });
-
-      setOpenTabs(updatedTabs);
-    }
-
-    // Track that the Spec_Item.txt file has been modified
-    // Mark this as a spec item file to ensure it's preserved exactly
-    const serializedData = JSON.stringify({
-      ...fileData,
-      items: updatedItems,
-      isSpecItemFile: true,
-      originalContent: fileData.originalContent // Pass through the original content if it exists
-    });
+    // Kombiniere das ausgewählte Item mit den aktualisierten Werten
+    const mergedItem = {
+      ...selectedItem,
+      ...updatedItem
+    };
     
-    // Log the presence of originalContent for debugging
-    if (fileData.originalContent) {
-      console.log("Original content is present, length:", fileData.originalContent.length);
-      console.log("First 100 chars:", fileData.originalContent.substring(0, 100));
-    } else {
-      console.warn("No original content found for Spec_Item.txt");
-    }
-    
-    // Verbessertes Tracking der Änderungen für beide Dateien
-    trackModifiedFile("Spec_Item.txt", serializedData, {
-      containsDisplayNameChanges: field === 'displayName',
-      containsDescriptionChanges: field === 'description',
-      modifiedField: field,
-      modifiedTimestamp: Date.now()
-    });
-    
-    // Also track propItem changes if this is a displayName or description change
-    if (field === 'displayName' || field === 'description') {
-      // Jetzt haben wir ein robusteres System für displayName und description Änderungen
-      console.log(`Verfolge Änderungen für Item ${updatedItem.id} (${updatedItem.name})`);
-      console.log(`  Field: ${field}, Alter Wert: "${oldValue}", Neuer Wert: "${field === 'displayName' ? updatedItem.displayName : updatedItem.description}"`);
+    // Aktualisiere den Namen und die Beschreibung in PropItem.txt.txt, falls geändert
+    if (
+      (updatedItem.displayName !== undefined && updatedItem.displayName !== selectedItem?.displayName) ||
+      (updatedItem.description !== undefined && updatedItem.description !== selectedItem?.description)
+    ) {
+      console.log('PropItem Informationen ändern sich, aktualisiere PropItem.txt.txt');
       
-      // Die Funktion trackPropItemChanges wird aufgerufen, um PropItem.txt.txt zu aktualisieren
-      trackPropItemChanges(
-        updatedItem.id,
-        updatedItem.name,
-        updatedItem.displayName || '',
-        updatedItem.description || ''
-      );
-      
-      // Rufe auch sicherheitshalber ensurePropItemConsistency auf
       try {
-        const { ensurePropItemConsistency } = require('../utils/file/fileOperations');
-        ensurePropItemConsistency({
-          ...fileData,
-          items: updatedItems
-        });
+        // Verwende updatePropItemProperties, um die Änderungen zu verfolgen
+        const propItemUpdated = await updatePropItemProperties(
+          mergedItem,
+          updatedItem.displayName || selectedItem?.displayName || mergedItem.name,
+          updatedItem.description || selectedItem?.description || ''
+        );
+        
+        console.log('PropItem Eigenschaften aktualisiert:', propItemUpdated);
       } catch (error) {
-        console.warn("Konnte ensurePropItemConsistency nicht aufrufen:", error);
+        console.error('Fehler beim Aktualisieren der PropItem Eigenschaften:', error);
       }
-      
-      // Explizites Flag für Konsistenz zwischen beiden Dateien setzen
-      console.log(`PropItem-Änderungen für ${field} wurden erfasst und für Spec_Item.txt und PropItem.txt.txt synchronisiert`);
     }
-  }, [fileData, editMode, selectedItem, openTabs, setFileData, setSelectedItem, setOpenTabs]);
+    
+    // Aktualisiere das Item im fileData
+    if (fileData && fileData.items) {
+      // Finde den Index des zu aktualisierenden Items
+      const itemIndex = fileData.items.findIndex((item: any) => item.id === mergedItem.id);
+      
+      if (itemIndex !== -1) {
+        // Erstelle eine Kopie des fileData
+        const updatedFileData = { ...fileData };
+        
+        // Erstelle eine Kopie des Items-Arrays
+        updatedFileData.items = [...fileData.items];
+        
+        // Aktualisiere das Item
+        updatedFileData.items[itemIndex] = mergedItem;
+        
+        // Setze das aktualisierte fileData
+        setFileData(updatedFileData);
+        
+        // Aktualisiere auch das ausgewählte Item
+        setSelectedItem(mergedItem);
+        
+        console.log('Item im fileData aktualisiert:', mergedItem);
+        
+        // Markiere die Datei als geändert
+        trackModifiedFile('Spec_Item.txt', JSON.stringify({
+          ...updatedFileData,
+          originalContent: fileData.originalContent
+        }));
+        
+        console.log('Datei als modifiziert markiert');
+      } else {
+        console.warn('Item nicht im fileData gefunden:', mergedItem.id);
+      }
+    } else {
+      console.warn('Kein fileData oder items vorhanden');
+    }
+  };
   
   // Performance-Optimierung: handleSelectItem memoisieren
   const handleSelectItem = useCallback((item: ResourceItem, showSettings: boolean, showToDoPanel: boolean) => {
@@ -210,10 +144,50 @@ export const useItemEditor = ({
     cacheNeedsUpdate = true;
   }, [fileData]);
 
+  // Ändere displayName und speichere die Änderung
+  const handleDisplayNameChange = async (newDisplayName: string) => {
+    if (!selectedItem) return;
+    setSelectedItem({ ...selectedItem, displayName: newDisplayName });
+    console.log("Speichere den neuen Display-Namen:", newDisplayName);
+    try {
+      await trackPropItemChanges(
+        selectedItem.id,
+        selectedItem.name,
+        newDisplayName,
+        selectedItem.description || ''
+      );
+      console.log("PropItem-Änderungen erfolgreich gespeichert");
+    } catch (error) {
+      console.error("Fehler beim Speichern der PropItem-Änderungen:", error);
+    }
+  };
+
+  // Ändere description und speichere die Änderung
+  const handleDescriptionChange = async (newDescription: string) => {
+    if (!selectedItem) return;
+    setSelectedItem({ ...selectedItem, description: newDescription });
+    console.log("Speichere die neue Beschreibung:", newDescription);
+    
+    try {
+      // Die Funktion trackPropItemChanges wird aufgerufen, um PropItem.txt.txt zu aktualisieren
+      await trackPropItemChanges(
+        selectedItem.id,
+        selectedItem.name,
+        selectedItem.displayName || selectedItem.name,
+        newDescription
+      );
+      console.log("PropItem-Änderungen erfolgreich gespeichert");
+    } catch (error) {
+      console.error("Fehler beim Speichern der PropItem-Änderungen:", error);
+    }
+  };
+
   return {
     editMode,
     handleUpdateItem,
     handleSelectItem,
-    handleToggleEditMode
+    handleToggleEditMode,
+    handleDisplayNameChange,
+    handleDescriptionChange
   };
 };

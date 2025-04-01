@@ -7,10 +7,25 @@ console.log('Preload-Skript wird ausgeführt...');
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld(
   'electronAPI', {
-    // Save a single file
-    saveFile: (fileName, content, targetDirectory) => {
-      console.log(`Preload: saveFile aufgerufen für ${fileName} in Verzeichnis ${targetDirectory || 'standard'}`);
-      return ipcRenderer.invoke('save-file', fileName, content, targetDirectory);
+    // Save a single file - aktualisiere API, um Dateinamen getrennt vom Pfad zu senden
+    saveFile: async (fileName, content, savePath) => {
+      console.log(`preload: Saving file ${fileName} to ${savePath}`);
+      try {
+        const result = await ipcRenderer.invoke('save-file', fileName, content, savePath);
+        console.log('preload: save-file result', result);
+        
+        if (result && result.success) {
+          return result;
+        } else if (result === 'SUCCESS') {
+          return 'SUCCESS'; // Legacy format for backward compatibility
+        } else {
+          console.error('preload: Error saving file', result);
+          return result || 'ERROR';
+        }
+      } catch (error) {
+        console.error('preload: Exception in saveFile', error);
+        return error.toString();
+      }
     },
     
     // Save multiple files at once
@@ -29,7 +44,26 @@ contextBridge.exposeInMainWorld(
     
     // Neue Funktion: Resolve resource path
     getResourcePath: (subPath) => 
-      ipcRenderer.invoke('get-resource-path', subPath)
+      ipcRenderer.invoke('get-resource-path', subPath),
+    
+    // Spezielle Funktion zum Speichern mit bestimmter Kodierung (z.B. ANSI/Latin1 für propItem.txt.txt)
+    saveFileWithEncoding: async (fileName, content, savePath, encodingOptions) => {
+      console.log(`preload: Saving file ${fileName} with encoding ${encodingOptions?.encoding || 'default'}`);
+      try {
+        const result = await ipcRenderer.invoke('save-file-with-encoding', fileName, content, savePath, encodingOptions);
+        console.log('preload: save-file-with-encoding result', result);
+        
+        if (result && result.success) {
+          return result;
+        } else {
+          console.error('preload: Error saving file with encoding', result);
+          return result || 'ERROR';
+        }
+      } catch (error) {
+        console.error('preload: Exception in saveFileWithEncoding', error);
+        return error.toString();
+      }
+    }
   }
 );
 

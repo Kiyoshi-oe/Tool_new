@@ -1,6 +1,6 @@
 import { setPropItemMappings } from './parseUtils';
 import { trackPropItemChanges, savePropItemChanges } from './fileOperations';
-import path from 'path';
+// import path from 'path';
 
 // Interface for propItem data mapping
 interface PropItemMapping {
@@ -197,11 +197,11 @@ export const parsePropItemFile = (content: string): PropItemMapping => {
  * @param description Die neue Beschreibung
  * @returns Das aktualisierte Item
  */
-export const updatePropItemProperties = (
+export const updatePropItemProperties = async (
   item: any,
   displayName: string,
   description: string
-): any => {
+): Promise<any> => {
   if (!item || !item.data || !item.data.szName) {
     console.error("Ungültiges Item für UpdatePropItemProperties:", item);
     throw new Error("Item enthält keine gültige szName-Eigenschaft");
@@ -242,45 +242,21 @@ export const updatePropItemProperties = (
   // Verfolge die Änderungen für späteres Speichern
   try {
     // Verbesserte Version mit Fehlerprotokollierung und Rückfallmechanismus
-    trackPropItemChanges(itemId, itemName, displayName, description);
+    await trackPropItemChanges(itemId, itemName, displayName, description);
     
     // Markiere explizit, dass dieses Item als modifiziert betrachtet werden soll,
     // auch wenn es nicht im aktuellen Tab geöffnet ist
     markItemAsModified(itemId, displayName, description);
     
-    // Markiere auch die Spec_Item.txt als modifiziert, falls sie es noch nicht ist
-    try {
-      const { trackModifiedFile } = require('./fileOperations');
-      
-      // Erstelle einfachen Platzhalter für Spec_Item.txt, der anzeigt, dass eine Änderung vorgenommen wurde
-      const specItemPlaceholder = JSON.stringify({
-        item: {
-          id: itemId,
-          name: itemName,
-          displayName: displayName,
-          description: description
-        },
-        isSpecItemModification: true,
-        modificationTime: Date.now()
-      });
-      
-      trackModifiedFile("Spec_Item.txt", specItemPlaceholder, {
-        containsDisplayNameChanges: true,
-        relatedItemId: itemId,
-        modifiedTimestamp: Date.now()
-      });
-      
-      console.log(`Spec_Item.txt wurde ebenfalls als modifiziert markiert für Item ${itemId}`);
-    } catch (trackError) {
-      console.error("Fehler beim Markieren von Spec_Item.txt als modifiziert:", trackError);
-      // Fortfahren, auch wenn das Tracking fehlschlägt
-    }
+    return updatedItem;
   } catch (error) {
-    console.error("Fehler beim Tracking von PropItem-Änderungen:", error);
-    // Fahre fort, auch wenn Tracking fehlschlägt
+    console.error(`Fehler beim Aktualisieren von PropItem für ${itemId}:`, error);
+    
+    // Markiere trotzdem als modifiziert für späteren Versuch
+    markItemAsModified(itemId, displayName, description);
+    
+    return updatedItem;
   }
-
-  return updatedItem;
 };
 
 /**
@@ -577,5 +553,65 @@ const saveToResourceFolder = async (content: string, fileName: string): Promise<
     console.error(`Fehler beim Speichern von ${fileName}:`, error);
     alert(`Fehler beim Speichern von ${fileName}: ${error.message}`);
     return false;
+  }
+};
+
+export const updatePropItemText = async (itemId: string, itemName: string, displayName: string, description: string): Promise<boolean> => {
+  try {
+    console.log(`Aktualisiere PropItem Text für ${itemId} - ${itemName}`);
+    await trackPropItemChanges(itemId, itemName, displayName, description);
+    return true;
+  } catch (error) {
+    console.error("Fehler beim Aktualisieren des PropItem Textes:", error);
+    return false;
+  }
+};
+
+/**
+ * Synchronisiert PropItem Text mit Spec_Item.txt
+ * Diese Funktion kann aufgerufen werden, um sicherzustellen, dass Name und Beschreibung
+ * in beiden Dateien übereinstimmen.
+ * @param itemId Die Item-ID
+ * @param itemName Der Item-Name
+ * @param displayName Der anzuzeigende Name
+ * @param description Die Beschreibung
+ * @returns true, wenn erfolgreich, false sonst
+ */
+export const syncPropItemTextWithSpecItem = async (
+  itemId: string,
+  itemName: string,
+  displayName: string,
+  description: string
+): Promise<boolean> => {
+  try {
+    // Verbesserte Version mit Fehlerprotokollierung und Rückfallmechanismus
+    await trackPropItemChanges(itemId, itemName, displayName, description);
+    
+    // Markiere explizit, dass dieses Item als modifiziert betrachtet werden soll,
+    // falls trackPropItemChanges das aus irgendeinem Grund nicht tut
+    return true;
+  } catch (error) {
+    console.error(`Fehler beim Synchronisieren von PropItem Text für ${itemId}:`, error);
+    
+    // Versuche Fallback über direkte savePropItemChanges-Funktion
+    try {
+      const success = await savePropItemChanges([{
+        id: itemId,
+        name: itemName,
+        displayName,
+        description
+      }]);
+      
+      if (success) {
+        console.log(`PropItem Text über Fallback-Methode aktualisiert für ${itemId}`);
+        return true;
+      } else {
+        console.error(`Fallback-Methode für ${itemId} fehlgeschlagen`);
+        return false;
+      }
+    } catch (fallbackError) {
+      console.error(`Fehler beim Fallback für ${itemId}:`, fallbackError);
+      return false;
+    }
   }
 };

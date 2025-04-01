@@ -6,6 +6,18 @@ const isElectron = () => {
   return window && window.process && window.process.versions && window.process.versions.electron;
 };
 
+// Electron API Typdefinition
+declare global {
+  interface Window {
+    electronAPI?: {
+      saveFile: (savePath: string, content: string) => Promise<any>;
+      saveAllFiles: (files: any[], savePath: string) => Promise<any>;
+      loadAllFiles: () => Promise<any>;
+      getResourcePath: (subPath: string) => Promise<any>;
+    }
+  }
+}
+
 export const loadPredefinedFiles = async (): Promise<{specItem: string | null, propItem: string | null}> => {
   try {
     console.log("Attempting to load files from resource directory");
@@ -27,179 +39,31 @@ export const loadPredefinedFiles = async (): Promise<{specItem: string | null, p
 // Laden direkt über das Dateisystem (nur in Electron)
 async function loadFilesFromFileSystem(): Promise<{specItem: string | null, propItem: string | null}> {
   try {
-    // In Electron können wir das Node.js fs-Modul verwenden
-    // Wir müssen dies dynamisch importieren, damit es im Browser nicht zu Fehlern kommt
-    const fs = window.require('fs');
-    const path = window.require('path');
-    const { app } = window.require('@electron/remote');
+    console.log("Lade Dateien über Electron API...");
     
-    // Basis-Pfad zur App-Ressourcen
-    let basePath = '';
-    if (app) {
-      // Im Produktionsmodus
-      basePath = path.join(app.getAppPath(), 'public', 'resource');
+    // Verwende die Electron-API zum Laden aller Ressourcendateien
+    if (window.electronAPI) {
+      // Verwende die Electron-API zum Laden der Dateien
+      const result = await window.electronAPI.loadAllFiles();
+      
+      if (result && result.success && result.files) {
+        console.log("Dateien vom Dateisystem geladen:", Object.keys(result.files));
+        
+        return {
+          specItem: result.files['Spec_Item.txt'] || null,
+          propItem: result.files['propItem.txt.txt'] || null
+        };
+      } else {
+        console.error("Fehler beim Laden der Dateien über Electron API:", result?.error || "Unbekannter Fehler");
+      }
     } else {
-      // Im Entwicklungsmodus
-      basePath = path.join(process.cwd(), 'public', 'resource');
+      console.error("window.electronAPI nicht verfügbar, kann nicht auf Dateisystem zugreifen");
     }
     
-    // Absolute Pfade zu den Dateien
-    const specItemPath = path.join(basePath, 'Spec_Item.txt');
-    const propItemPath = path.join(basePath, 'propItem.txt.txt');
-    
-    console.log(`Trying to load Spec_Item.txt from filesystem: ${specItemPath}`);
-    
-    let specItemText = null;
-    let propItemText = null;
-    
-    // Versuche die Spec_Item.txt Datei zu lesen
-    if (fs.existsSync(specItemPath)) {
-      // Performance-Optimierung: Prüfe zuerst Dateigröße
-      const stats = fs.statSync(specItemPath);
-      console.log(`Spec_Item.txt Größe: ${stats.size} Bytes`);
-      
-      // Für große Dateien WASM-basierte Dekodierung verwenden, falls verfügbar
-      if (stats.size > 5 * 1024 * 1024) { // > 5MB
-        console.log("Große Datei erkannt, nutze optimierte Lademethode");
-        // Nur die ersten 4KB lesen, um den BOM zu erkennen
-        const headerBuffer = Buffer.alloc(4096);
-        const fd = fs.openSync(specItemPath, 'r');
-        fs.readSync(fd, headerBuffer, 0, 4096, 0);
-        
-        // BOM erkennen
-        let encoding: BufferEncoding = 'utf8';
-        let skipBytes = 0;
-        
-        if (headerBuffer[0] === 0xEF && headerBuffer[1] === 0xBB && headerBuffer[2] === 0xBF) {
-          console.log("UTF-8 BOM detected");
-          encoding = 'utf8';
-          skipBytes = 3;
-        } else if (headerBuffer[0] === 0xFF && headerBuffer[1] === 0xFE) {
-          console.log("UTF-16LE BOM detected");
-          encoding = 'utf16le';
-          skipBytes = 2;
-        }
-        
-        // Stream-basiertes Lesen für große Dateien
-        const chunks = [];
-        const chunkSize = 1024 * 1024; // 1MB Chunks
-        let position = skipBytes;
-        let bytesRead = 0;
-        
-        while (position < stats.size) {
-          const buffer = Buffer.alloc(chunkSize);
-          const bytesRead = fs.readSync(fd, buffer, 0, chunkSize, position);
-          if (bytesRead <= 0) break;
-          
-          chunks.push(buffer.slice(0, bytesRead).toString(encoding));
-          position += bytesRead;
-          
-          // Verarbeitung-Fortschritt anzeigen
-          if (chunks.length % 5 === 0) {
-            console.log(`Ladefortschritt: ${Math.round((position / stats.size) * 100)}%`);
-          }
-        }
-        
-        fs.closeSync(fd);
-        specItemText = chunks.join('');
-        console.log(`Loaded Spec_Item.txt with optimized method, content length: ${specItemText.length}`);
-      } else {
-        // Standard-Lademethode für kleinere Dateien
-        // Buffer als UTF-8 decodieren
-        const buffer = fs.readFileSync(specItemPath);
-        
-        // BOM erkennen und Codierung wählen
-        if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
-          console.log("UTF-8 BOM detected in file");
-          specItemText = buffer.toString('utf8', 3); // Skip BOM
-        } else if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
-          console.log("UTF-16LE BOM detected in file");
-          specItemText = buffer.toString('utf16le', 2); // Skip BOM
-        } else {
-          // Defaultmäßig als UTF-8 lesen
-          specItemText = buffer.toString('utf8');
-        }
-        
-        console.log(`Loaded Spec_Item.txt from filesystem, content length: ${specItemText.length}`);
-      }
-      
-      // Ersten Teil der Datei für Debug-Zwecke ausgeben
-      console.log("First 200 chars:", specItemText.substring(0, 200).replace(/\n/g, '\\n'));
-    } else {
-      console.error(`File not found: ${specItemPath}`);
-      // Alternatives Pfad versuchen (vom Benutzer angegeben)
-      const userPath = 'C:/Users/paypa/Downloads/cluster/Tool/public/resource/Spec_Item.txt';
-      console.log(`Trying alternative path: ${userPath}`);
-      
-      if (fs.existsSync(userPath)) {
-        // Auch hier die optimierte Methode für große Dateien verwenden
-        const stats = fs.statSync(userPath);
-        
-        if (stats.size > 5 * 1024 * 1024) {
-          // Ähnlicher Code wie oben für große Dateien
-          // ... (Verwende die gleiche optimierte Lademethode)
-          // ... existing code ...
-          const headerBuffer = Buffer.alloc(4096);
-          const fd = fs.openSync(userPath, 'r');
-          fs.readSync(fd, headerBuffer, 0, 4096, 0);
-          
-          let encoding: BufferEncoding = 'utf8';
-          let skipBytes = 0;
-          
-          if (headerBuffer[0] === 0xEF && headerBuffer[1] === 0xBB && headerBuffer[2] === 0xBF) {
-            encoding = 'utf8';
-            skipBytes = 3;
-          } else if (headerBuffer[0] === 0xFF && headerBuffer[1] === 0xFE) {
-            encoding = 'utf16le';
-            skipBytes = 2;
-          }
-          
-          const chunks = [];
-          const chunkSize = 1024 * 1024;
-          let position = skipBytes;
-          
-          while (position < stats.size) {
-            const buffer = Buffer.alloc(chunkSize);
-            const bytesRead = fs.readSync(fd, buffer, 0, chunkSize, position);
-            if (bytesRead <= 0) break;
-            
-            chunks.push(buffer.slice(0, bytesRead).toString(encoding));
-            position += bytesRead;
-          }
-          
-          fs.closeSync(fd);
-          specItemText = chunks.join('');
-        } else {
-          // Standardmethode für kleinere Dateien
-          const buffer = fs.readFileSync(userPath);
-          specItemText = buffer.toString('utf8');
-        }
-        
-        console.log(`Loaded Spec_Item.txt from user path, content length: ${specItemText.length}`);
-      } else {
-        throw new Error("Could not find Spec_item.txt file in any location");
-      }
-    }
-    
-    // Versuche die propItem.txt.txt Datei zu lesen
-    if (fs.existsSync(propItemPath)) {
-      const buffer = fs.readFileSync(propItemPath);
-      
-      // BOM erkennen und Codierung wählen
-      if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
-        console.log("UTF-16LE BOM detected in propItem file");
-        propItemText = buffer.toString('utf16le', 2); // Skip BOM
-      } else {
-        propItemText = buffer.toString('utf8');
-      }
-      
-      console.log(`Loaded propItem.txt.txt from filesystem, content length: ${propItemText.length}`);
-        }
-        
-        return { specItem: specItemText, propItem: propItemText };
+    return { specItem: null, propItem: null };
   } catch (error) {
-    console.error("Error loading files from filesystem:", error);
-    throw error;
+    console.error("Fehler beim Laden vom Dateisystem:", error);
+    return { specItem: null, propItem: null };
   }
 }
 
