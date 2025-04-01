@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { FileData, LogEntry, ResourceItem } from "../types/fileTypes";
+import { FileData, LogEntry, ResourceItem, EffectData } from "../types/fileTypes";
 import { toast } from "sonner";
 import { trackModifiedFile, trackItemChanges } from "../utils/file/fileOperations";
 import { updatePropItemProperties } from "../utils/file/propItemUtils";
@@ -235,6 +235,33 @@ export const useItemEditor = ({
     console.log(`Beschreibung im State aktualisiert`);
   }, []);
 
+  // Neue Funktion: Aktualisiere die Effekte eines Items
+  const handleEffectsChange = useCallback((newEffects: EffectData[]) => {
+    if (!selectedItem) return;
+    
+    console.log(`Aktualisiere Effekte für Item ${selectedItem.id}`, newEffects);
+    
+    // Aktualisiere das Item im State mit den neuen Effekten
+    setItem(prevItem => ({
+      ...prevItem,
+      effects: newEffects
+    }));
+    
+    // Aktualisiere das ausgewählte Item mit den neuen Effekten
+    const updatedItem = {
+      ...selectedItem,
+      effects: newEffects
+    };
+    
+    // Aktualisiere das Item in der Liste
+    handleUpdateItem(updatedItem);
+    
+    // Markiere Änderungen als nicht gespeichert
+    setHasUnsavedChanges(true);
+    
+    console.log(`Effekte im State aktualisiert: ${newEffects.length} Effekte`);
+  }, [selectedItem, handleUpdateItem]);
+
   // Funktion zum Speichern von Änderungen
   const saveChanges = useCallback(async () => {
     if (!selectedItem || !hasUnsavedChanges) return;
@@ -281,6 +308,7 @@ export const useItemEditor = ({
     handleToggleEditMode,
     handleDisplayNameChange,
     handleDescriptionChange,
+    handleEffectsChange,
     saveChanges
   };
 };

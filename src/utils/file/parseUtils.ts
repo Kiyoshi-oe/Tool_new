@@ -5,217 +5,300 @@ interface PropItemMapping {
   [key: string]: { name: string; displayName: string; description: string };
 }
 
-// Global cache for propItem mappings
+// Global variable to store propItem mappings for use in parsing
 let propItemMappings: PropItemMapping = {};
 
-// Hilfsfunktion, um propItem Mappings zu erhalten
-export function getPropItemDisplayName(idOrName: string): string {
-  // Wenn das Mapping direkt existiert
-  if (propItemMappings[idOrName]) {
-    return propItemMappings[idOrName].displayName;
+// Globale Variable für defineItem Mappings
+let defineItemEffectMappings: { [key: string]: EffectData[] } = {};
+
+/**
+ * Setzt das Mapping für die propItem.txt.txt-Datei
+ * @param mappings Das Mapping-Objekt mit den Zuordnungen
+ */
+export const setPropItemMappings = (mappings: PropItemMapping) => {
+  propItemMappings = mappings;
+  console.log(`PropItem-Mappings gesetzt mit ${Object.keys(mappings).length} Einträgen`);
+};
+
+/**
+ * Setzt das Mapping für die defineItem.h-Datei
+ * @param mappings Das Mapping-Objekt mit den Zuordnungen von defineItems zu effects
+ */
+export const setDefineItemEffectMappings = (mappings: { [key: string]: EffectData[] }) => {
+  defineItemEffectMappings = mappings;
+  console.log(`DefineItem-Effect-Mappings gesetzt mit ${Object.keys(mappings).length} Einträgen`);
+};
+
+/**
+ * Parst eine txt- oder csv-Datei und gibt die extrahierten Daten zurück
+ * @param data Der Inhalt der Datei
+ * @returns Ein Objekt mit Header und Items
+ */
+export const parseFileContent = (data: string): FileData => {
+  if (!data) {
+    console.error("Leerer Dateiinhalt wurde zum Parsen übergeben");
+    return { header: [], items: [] };
   }
   
-  // Versuche verschiedene Formatierungen
-  const formattedId = idOrName.replace(/IDS_PROPITEM_TXT_(\d+)/, (_, num) => 
-    `IDS_PROPITEM_TXT_${parseInt(num).toString().padStart(6, '0')}`
-  );
+  // Bestimme den Dateityp
+  const isTabSeparated = data.includes('\t');
+  const isCommaSeparated = data.includes(',');
   
-  if (propItemMappings[formattedId]) {
-    return propItemMappings[formattedId].displayName;
+  // Entferne BOM (Byte Order Mark) falls vorhanden
+  let cleanedData = data;
+  if (data.charCodeAt(0) === 0xFEFF) {
+    cleanedData = data.slice(1);
   }
   
-  // Fallback: Suche nach ähnlichen IDs
-  const keys = Object.keys(propItemMappings);
-  const similarKey = keys.find(key => {
-    // Extrahiere die numerischen Teile
-    const keyNum = key.replace(/\D/g, '');
-    const idNum = idOrName.replace(/\D/g, '');
-    return keyNum === idNum;
-  });
+  // Teile den Inhalt in Zeilen auf
+  const lines = cleanedData.split(/\r?\n/);
   
-  if (similarKey) {
-    return propItemMappings[similarKey].displayName;
+  console.log(`Datei hat ${lines.length} Zeilen, prüfe Format...`);
+  
+  // Prüfe, ob es sich um das Format aus einer propItem.txt.txt handelt
+  if (lines.length > 0 && lines[0].includes('IDS_PROPITEM_TXT_')) {
+    return parsePropItemFormat(lines);
   }
   
-  // Wenn nichts gefunden wurde, gib die ursprüngliche ID zurück
-  console.warn(`No display name found for ${idOrName}`);
-  return idOrName;
+  // Prüfe, ob es sich um das Format aus einer Spec_item.txt handelt
+  const firstLine = lines[0];
+  if (firstLine && firstLine.includes('dwID') && firstLine.includes('szName')) {
+    return parseSpecItemFormat(lines);
+  }
+  
+  // Fallback auf allgemeines Format
+  if (isTabSeparated) {
+    return parseTabSeparated(lines);
+  } else if (isCommaSeparated) {
+    return parseCommaSeparated(lines);
+  }
+  
+  // Wenn kein spezifisches Format erkannt wurde, als Tab-getrennt behandeln
+  console.warn("Kein spezifisches Format erkannt, versuche Tab-getrenntes Format");
+  return parseTabSeparated(lines);
+};
+
+/**
+ * Extrahiert den Display-Namen aus einem propItem.txt.txt-Eintrag
+ * @param id Die ID des propItem-Eintrags
+ * @returns Der extrahierte Name oder die ursprüngliche ID, falls nicht gefunden
+ */
+export const getPropItemDisplayName = (id: string): string => {
+  // Überprüfe, ob das Mapping vorhanden und die ID enthalten ist
+  if (propItemMappings && propItemMappings[id]) {
+    return propItemMappings[id].displayName || id;
+  }
+  
+  // Wenn nicht gefunden, gebe die ursprüngliche ID zurück
+  return id;
+};
+
+/**
+ * Extrahiert die Beschreibung aus einem propItem.txt.txt-Eintrag
+ * @param id Die ID des propItem-Eintrags
+ * @returns Die extrahierte Beschreibung oder eine leere Zeichenkette, falls nicht gefunden
+ */
+export const getPropItemDescription = (id: string): string => {
+  // Überprüfe, ob das Mapping vorhanden und die ID enthalten ist
+  if (propItemMappings && propItemMappings[id]) {
+    return propItemMappings[id].description || '';
+  }
+  
+  // Wenn nicht gefunden, gebe eine leere Zeichenkette zurück
+  return '';
+};
+
+/**
+ * Extrahiert Effekte aus den Spalten dwDestParam1-6 und nAdjParamVal1-6
+ * @param data Die ItemData mit den dwDestParam und nAdjParamVal Spalten
+ * @returns Array von EffectData Objekten
+ */
+export const extractEffectsFromData = (data: any): EffectData[] => {
+  if (!data) return [];
+  
+  const effects: EffectData[] = [];
+  
+  // Extrahiere bis zu 6 Effekte aus den dwDestParam und nAdjParamVal Spalten
+  for (let i = 1; i <= 6; i++) {
+    const typeKey = `dwDestParam${i}`;
+    const valueKey = `nAdjParamVal${i}`;
+    
+    // Prüfe ob der Typ vorhanden und nicht '_NONE' ist
+    if (data[typeKey] && data[typeKey] !== '_NONE' && data[typeKey] !== '=' && data[typeKey] !== '-') {
+      effects.push({
+        type: data[typeKey],
+        value: data[valueKey] || '0'
+      });
+    }
+  }
+  
+  console.log(`Extrahierte ${effects.length} Effekte aus dwDestParam/nAdjParamVal`);
+  return effects;
 }
 
 /**
- * Prozessiert eine Textdatei in Zeilen und extrahiert Header und Datenreihen.
- * Optimiert für große Dateien mit über 100K Zeilen.
- * 
- * @param content Der Textinhalt der Datei
- * @param filterFn Optional: Funktion zum Filtern der Daten
- * @returns Ein Objekt mit Header und Datenzeilen oder ein FileData Objekt (für Abwärtskompatibilität)
+ * Parst Daten im propItem.txt.txt Format
  */
-export function parseTextFile(
-  content: string,
-  filterFn?: (parsedLine: Record<string, string>, rawLine: string) => boolean
-): { headers: string[]; data: Record<string, string>[] } | FileData {
-  try {
-    console.log(`Starting file parsing, content length: ${content.length}`);
-    
-    // Normalisiere Zeilenumbrüche und entferne BOM falls vorhanden
-    const normalizedContent = content.replace(/\r\n/g, '\n').replace(/^\uFEFF/, '');
-    
-    // Teile in Zeilen 
-    const lines = normalizedContent.split('\n');
-    const totalLines = lines.length;
-    console.log(`File split into ${totalLines} lines`);
-    
-    if (totalLines === 0) {
-      console.error("File appears to be empty after normalization");
-      return { headers: [], data: [] };
-    }
-    
-    // Überprüfe, ob es sich um eine spec_item.txt Datei handelt (durch Suche nach Tabs)
-    const isSpecItemFormat = lines.length > 0 && lines[0].includes('\t');
-    
-    if (isSpecItemFormat) {
-      return parseSpecItemFormat(lines);
-    }
-    
-    // Finde den Header (erste nicht-leere Zeile, die mit // beginnt)
-    let headerLine = "";
-    let headerIndex = 0;
-    let delimiter = '.'; // Standard-Trennzeichen 
-    
-    // Suche in den ersten 20 Zeilen nach einem gültigen Header
-    const maxHeaderSearchLines = Math.min(20, totalLines);
-    for (let i = 0; i < maxHeaderSearchLines; i++) {
-      const line = lines[i].trim();
-      if (line && line.startsWith("//")) {
-        headerLine = line;
-        headerIndex = i;
-        break;
-      }
-    }
-    
-    let headers: string[] = [];
-    
-    // Wenn kein Header gefunden wurde, analysiere die erste nicht-leere Zeile
-    // und versuche, einen Header zu erstellen
-    if (!headerLine) {
-      console.warn("No valid header found in first 20 lines, attempting to create one from data");
-      
-      // Finde die erste nicht-leere Zeile
-      for (let i = 0; i < Math.min(50, totalLines); i++) {
-        const line = lines[i].trim();
-        if (line) {
-          // Prüfe, ob die Zeile Tabs enthält
-          if (line.includes('\t')) {
-            delimiter = '\t';
-          } else if (line.includes(',') && !line.includes('.')) {
-            delimiter = ',';
-          } else if (line.includes(';') && !line.includes('.')) {
-            delimiter = ';';
-          }
-          
-          // Versuche, einen Header aus der ersten Zeile zu generieren
-          const columnCount = line.split(delimiter).length;
-          headers = Array.from({ length: columnCount }, (_, i) => `Column${i + 1}`);
-          headerIndex = -1; // Bedeutet, wir verwenden die Zeilen ab der ersten Zeile
-          
-          console.log(`Created ${columnCount} generic headers with delimiter '${delimiter}'`);
-          break;
-        }
-      }
-      
-      // Wenn immer noch kein Header erstellt werden konnte, liefere einen leeren Datensatz zurück
-      if (headers.length === 0) {
-        console.error("Could not create headers from file content");
-        return { headers: [], data: [] };
-      }
-    } else {
-      console.log(`Header found at line ${headerIndex}: ${headerLine.substring(0, 50)}...`);
-      
-      // Ermittle das Trennzeichen (Tab oder Punkt)
-      delimiter = headerLine.includes('\t') ? '\t' : '.';
-      console.log(`Using delimiter: ${delimiter === '\t' ? 'TAB' : 'DOT'}`);
-      
-      // Extrahiere Header-Spalten (entferne "//" Präfix)
-      headers = headerLine
-        .substring(2)
-        .split(delimiter)
-        .map(header => header.trim());
-      
-      console.log(`Extracted ${headers.length} header columns`);
-    }
-    
-    const data: Record<string, string>[] = [];
-    const headerCount = headers.length;
-    
-    // Verarbeite die Datenzeilen in Batches für bessere Performance
-    const batchSize = 5000; // Kleinere Batches für weniger Speicherverbrauch
-    const startLine = headerIndex + 1; // Wenn headerIndex -1 ist, starten wir bei Zeile 0
-    const dataLines = totalLines - Math.max(0, startLine);
-    const numBatches = Math.ceil(dataLines / batchSize);
-    
-    console.log(`Processing ${dataLines} data lines in ${numBatches} batches of ${batchSize}`);
-    
-    for (let batchIndex = 0; batchIndex < numBatches; batchIndex++) {
-      const batchStartLine = Math.max(0, startLine) + batchIndex * batchSize;
-      const endLine = Math.min(batchStartLine + batchSize, totalLines);
-      
-      if (batchIndex % 10 === 0) {
-        console.log(`Processing batch ${batchIndex + 1}/${numBatches}, lines ${batchStartLine}-${endLine}`);
-      }
-      
-      for (let i = batchStartLine; i < endLine; i++) {
-        const line = lines[i].trim();
-        
-        // Überspringen von leeren Zeilen oder Kommentarzeilen
-        if (!line || line.startsWith("//")) continue;
-        
-        const values = line.split(delimiter);
-        
-        // Überspringe Zeilen mit zu wenigen Werten (mindestens 1 Wert)
-        if (values.length < 1) continue;
-        
-        const parsedLine: Record<string, string> = {};
-        
-        // Weise Werte den Header-Spalten zu (nur bis zur Länge des Headers)
-        for (let j = 0; j < Math.min(headerCount, values.length); j++) {
-          parsedLine[headers[j]] = values[j].trim();
-        }
-        
-        // Wende Filter an falls vorhanden
-        if (filterFn && !filterFn(parsedLine, line)) {
-          continue;
-        }
-        
-        data.push(parsedLine);
-      }
-      
-      // Gib Speicher frei nach jedem Batch (hilft bei großen Dateien)
-      if (batchIndex % 5 === 4) {
-        console.log(`Processed ${data.length} rows so far. Freeing memory...`);
-        global.gc && global.gc();
-      }
-    }
-    
-    console.log(`Finished parsing, extracted ${data.length} data rows`);
-    
-    if (data.length === 0) {
-      console.warn("No data was extracted from the file");
-      
-      // Zeige Beispielzeilen für Diagnose
-      console.warn("Example lines from file:");
-      const startLine = Math.min(headerIndex + 1, totalLines - 1);
-      const endLine = Math.min(startLine + 10, totalLines);
-      
-      for (let i = startLine; i < endLine; i++) {
-        console.warn(`Line ${i}: ${lines[i].substring(0, 100)}`);
-      }
-    }
-    
-    return { headers, data };
-  } catch (error) {
-    console.error("Error parsing text file:", error);
-    return { headers: ["Error"], data: [{ Error: "Failed to parse file: " + String(error) }] };
+function parsePropItemFormat(lines: string[]): FileData {
+  console.log("Detected propItem.txt.txt format");
+  
+  if (lines.length === 0) {
+    return { header: ["ID", "Value"], items: [] };
   }
+  
+  const items: ResourceItem[] = [];
+  const propItemMap: { [key: string]: { name: string; description: string } } = {};
+  
+  // Gruppiere die Einträge nach ID
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    
+    const parts = line.split('\t');
+    if (parts.length < 2) continue;
+    
+    const id = parts[0].trim();
+    const value = parts[1].trim();
+    
+    if (id.startsWith('IDS_PROPITEM_TXT_')) {
+      // Extrahiere die Basis-ID (Nummer ohne führende Nullen)
+      const idMatch = id.match(/IDS_PROPITEM_TXT_(\d+)/);
+      if (!idMatch) continue;
+      
+      const baseId = parseInt(idMatch[1], 10);
+      
+      // Gerade Zahlen sind Namen, ungerade sind Beschreibungen
+      if (baseId % 2 === 0) {
+        // Name (gerade ID)
+        propItemMap[id] = propItemMap[id] || { name: value, description: "" };
+        propItemMap[id].name = value;
+      } else {
+        // Beschreibung (ungerade ID = baseId - 1 + 1)
+        const nameId = `IDS_PROPITEM_TXT_${(baseId - 1).toString().padStart(6, '0')}`;
+        propItemMap[nameId] = propItemMap[nameId] || { name: "", description: value };
+        propItemMap[nameId].description = value;
+      }
+    }
+  }
+  
+  // Konvertiere das Map in ResourceItem-Objekte
+  Object.entries(propItemMap).forEach(([id, { name, description }]) => {
+    items.push({
+      id,
+      name,
+      displayName: name,
+      description,
+      idPropItem: id,
+      data: { dwID: id },
+      effects: []
+    });
+  });
+  
+  console.log(`Parsed ${items.length} items from propItem.txt.txt format`);
+  return { header: ["ID", "Value"], items };
+}
+
+/**
+ * Parst Daten im Tab-getrennten Format
+ */
+function parseTabSeparated(lines: string[]): FileData {
+  console.log("Parsing generic tab-separated format");
+  
+  if (lines.length === 0) {
+    return { header: [], items: [] };
+  }
+  
+  // Erste Zeile ist der Header
+  const header = lines[0].split('\t').map(h => h.trim());
+  console.log(`Header columns: ${header.length}`);
+  
+  const items: ResourceItem[] = [];
+  
+  // Verarbeite die Datenzeilen
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    
+    const values = line.split('\t');
+    if (values.length < 1) continue;
+    
+    const data: ItemData = {};
+    
+    // Weise Werte den Header-Spalten zu
+    for (let j = 0; j < Math.min(header.length, values.length); j++) {
+      const columnName = header[j];
+      const value = values[j].trim();
+      data[columnName] = value;
+    }
+    
+    // Versuche, ID und Name aus den Daten zu extrahieren
+    const id = data.id || data.ID || data.dwID || `item_${i}`;
+    const name = data.name || data.NAME || data.szName || id;
+    
+    items.push({
+      id: String(id),
+      name: String(name),
+      displayName: String(name),
+      description: data.description ? String(data.description) : (data.DESCRIPTION ? String(data.DESCRIPTION) : ''),
+      data,
+      effects: []
+    });
+  }
+  
+  console.log(`Parsed ${items.length} items from tab-separated format`);
+  return { header, items };
+}
+
+/**
+ * Parst Daten im Komma-getrennten Format (CSV)
+ */
+function parseCommaSeparated(lines: string[]): FileData {
+  console.log("Parsing comma-separated (CSV) format");
+  
+  if (lines.length === 0) {
+    return { header: [], items: [] };
+  }
+  
+  // Erste Zeile ist der Header
+  const header = lines[0].split(',').map(h => h.trim());
+  console.log(`Header columns: ${header.length}`);
+  
+  const items: ResourceItem[] = [];
+  
+  // Verarbeite die Datenzeilen
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    
+    // Einfache CSV-Verarbeitung (keine Berücksichtigung von Anführungszeichen oder Escape-Sequenzen)
+    const values = line.split(',');
+    if (values.length < 1) continue;
+    
+    const data: ItemData = {};
+    
+    // Weise Werte den Header-Spalten zu
+    for (let j = 0; j < Math.min(header.length, values.length); j++) {
+      const columnName = header[j];
+      const value = values[j].trim();
+      data[columnName] = value;
+    }
+    
+    // Versuche, ID und Name aus den Daten zu extrahieren
+    const id = data.id || data.ID || data.dwID || `item_${i}`;
+    const name = data.name || data.NAME || data.szName || id;
+    
+    items.push({
+      id: String(id),
+      name: String(name),
+      displayName: String(name),
+      description: data.description ? String(data.description) : (data.DESCRIPTION ? String(data.DESCRIPTION) : ''),
+      data,
+      effects: []
+    });
+  }
+  
+  console.log(`Parsed ${items.length} items from comma-separated format`);
+  return { header, items };
 }
 
 /**
@@ -249,58 +332,24 @@ function parseSpecItemFormat(lines: string[]): FileData {
   const supportsWorkers = typeof Worker !== 'undefined';
   let useWorkers = isLargeFile && supportsWorkers && totalBatches > 4;
   
+  // Cache für Spaltenindizes, um wiederholte header.indexOf-Aufrufe zu vermeiden
+  const headerLength = header.length;
+  
+  // Webworker sind für diese Art von Daten oft langsamer wegen der Overhead-Kosten
+  useWorkers = false;
+  
   if (useWorkers) {
-    try {
-      console.log("Versuche parallele Verarbeitung mit Web Workers");
-      
-      // Da Webworkers mit Callbacks arbeiten, emulieren wir dies synchron
-      // für die Kompatibilität mit dem bestehenden Code
-      
-      // Maximale Anzahl an Batches parallel verarbeiten (basierend auf CPU-Kernen, max 4)
-      const maxConcurrentBatches = Math.min(4, navigator.hardwareConcurrency || 2);
-      console.log(`Parallele Verarbeitung mit ${maxConcurrentBatches} gleichzeitigen Batches`);
-      
-      // Inline Worker-Code für Parser-Funktion (als Blob)
-      // In einer realen Implementierung würde man eine separate Worker-Datei verwenden
-      
-      // Fallback zur seriellen Verarbeitung, wenn Worker nicht funktionieren
-      console.log("Webworker nicht verfügbar, verwende optimierte serielle Verarbeitung");
-      useWorkers = false;
-    } catch (error) {
-      console.error("Fehler beim Initialisieren der Webworkers:", error);
-      useWorkers = false;
-    }
+    console.log('Webworker-Unterstützung noch nicht implementiert, falle zurück auf sequentielles Parsen');
+    // TODO: Implementiere Webworker-Unterstützung für paralleles Parsen
   }
   
-  // Standard-Implementierung (optimiert)
-  if (!useWorkers) {
-    // Reduziere häufige Log-Ausgaben bei großen Dateien
-    console.log(`Verarbeite ${totalLines} Datenzeilen in ${totalBatches} Batches zu je ${batchSize} Zeilen`);
-    
-    // Performance-Optimierung: Vorallokation von Speicher für große Arrays
-    if (isLargeFile) {
-      // Versuche, den benötigten Speicher vorzureservieren (reduziert Neuallokationen)
-      try {
-        // Reserviere Platz für items-Array basierend auf geschätzter Elementzahl
-        items.length = totalLines;
-        console.log("Speicher für Items reserviert, um Neuallokationen zu reduzieren");
-      } catch (e) {
-        console.warn("Speichervorallokation fehlgeschlagen:", e);
-      }
-    }
-    
+  // Sequentielles Parsen
+  {
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
       const startLine = 1 + batchIndex * batchSize;
       const endLine = Math.min(startLine + batchSize, lines.length);
-      const currentBatch: ResourceItem[] = [];
       
-      // Minimiere Log-Ausgaben für bessere Performance
-      if (batchIndex === 0 || batchIndex === totalBatches - 1 || batchIndex % 10 === 0) {
-        console.log(`Verarbeite Batch ${batchIndex + 1}/${totalBatches}, Zeilen ${startLine}-${endLine}`);
-      }
-      
-      // Performance-Optimierung: Lokale Variable für Header-Länge
-      const headerLength = header.length;
+      console.log(`Verarbeite Batch ${batchIndex + 1}/${totalBatches} (Zeilen ${startLine} bis ${endLine})`);
       
       for (let i = startLine; i < endLine; i++) {
         const line = lines[i].trim();
@@ -381,6 +430,9 @@ function parseSpecItemFormat(lines: string[]): FileData {
             }
           }
           
+          // Extrahiere Effekte aus den dwDestParam und nAdjParamVal Spalten
+          const effects = extractEffectsFromData(data);
+          
           // Performance-Optimierung: Direkt ins items-Array pushen statt über Zwischenbatch
           items.push({
             id,
@@ -389,7 +441,7 @@ function parseSpecItemFormat(lines: string[]): FileData {
             description,
             idPropItem,
             data,
-            effects: [], // Effekte on-demand laden
+            effects // Befülle effects statt leerem Array
           });
         } else if (name) {
           // Für Elemente ohne ID, aber mit Namen
@@ -400,7 +452,7 @@ function parseSpecItemFormat(lines: string[]): FileData {
             description: '',
             idPropItem: '',
             data,
-            effects: [],
+            effects: [], // Leeres Array, da keine vollständigen Daten vorhanden
           });
         }
         // Performance-Optimierung: Skip Items ohne ID und ohne Namen
@@ -421,31 +473,7 @@ function parseSpecItemFormat(lines: string[]): FileData {
   return { header, items };
 }
 
-// Setter für propItem Mappings mit zusätzlicher Sicherung
-export function setPropItemMappings(mappings: PropItemMapping): void {
-  console.log(`Setting propItemMappings with ${Object.keys(mappings).length} entries`);
-  
-  // Speichere das Mapping direkt
-  propItemMappings = mappings;
-  
-  // Zusätzlich: Wichtige IDs direkt überprüfen
-  const criticalIds = [
-    "IDS_PROPITEM_TXT_007342", 
-    "IDS_PROPITEM_TXT_007342", 
-    "IDS_PROPITEM_TXT_011634"
-  ];
-  
-  console.log("Checking if critical IDs are available in the mappings:");
-  criticalIds.forEach(id => {
-    if (propItemMappings[id]) {
-      console.log(`✅ ID ${id} is available with name: ${propItemMappings[id].displayName}`);
-    } else {
-      console.warn(`❌ ID ${id} is NOT available in mappings`);
-    }
-  });
-}
+// Exportiere parseTextFile als Alias für parseFileContent
+export const parseTextFile = parseFileContent;
 
-// Getter für propItem Mappings
-export function getPropItemMappings(): PropItemMapping {
-  return propItemMappings;
-}
+// ... Rest der Datei unverändert ...

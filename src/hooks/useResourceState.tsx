@@ -45,6 +45,7 @@ export const useResourceState = (settings: any, setLogEntries: React.Dispatch<Re
     handleUpdateItem, 
     handleSelectItem, 
     handleToggleEditMode,
+    handleEffectsChange,
     saveChanges
   } = useItemEditor({
     fileData,
@@ -144,6 +145,7 @@ export const useResourceState = (settings: any, setLogEntries: React.Dispatch<Re
     handleCloseTab,
     handleSelectTab,
     handleToggleEditMode,
+    handleEffectsChange,
     saveCurrentTab: saveCurrentTabWithEditor,
     saveAllTabs: saveAllTabsWithEditor
   };

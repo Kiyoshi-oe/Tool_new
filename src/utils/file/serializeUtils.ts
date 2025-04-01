@@ -233,30 +233,48 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
       
       // Hinzugefügt: Aktualisiere dwDestParam1-6 und nAdjParamVal1-6 basierend auf den Effekten
       if (item.effects && Array.isArray(item.effects)) {
-        // Durchlaufe alle möglichen Effekte (maximal 6)
+        console.log(`Aktualisiere Effekte für Item ${itemId}: ${JSON.stringify(item.effects)}`);
+        
+        // Zuerst setze alle Effekt-Spalten auf NONE/_NONE oder leer, um alte Werte zu löschen
         for (let i = 0; i < 6; i++) {
-          const effect = item.effects[i];
+          // Position in columns berechnen: dwDestParam1 ist in column 82 (0-indexiert)
+          const dwDestParamIndex = 82 + i;
+          // Position in columns berechnen: nAdjParamVal1 ist in column 88 (0-indexiert)
+          const nAdjParamValIndex = 88 + i;
           
-          // dwDestParam Feld aktualisieren (1-indexiert, daher i+1)
-          const dwDestParamField = `dwDestParam${i+1}`;
-          const destParamFieldInfo = fieldMap.get(dwDestParamField);
-          if (destParamFieldInfo) {
-            // Position in columns berechnen: dwDestParam1 ist in column 82 (0-indexiert)
-            const columnIndex = 82 + i;
-            // Wenn es einen Effekt gibt, setze den Typ, sonst setze auf "_NONE" oder leer
-            columns[columnIndex] = effect && effect.type !== '-' ? effect.type : "_NONE";
-            console.log(`Aktualisiere ${dwDestParamField} für Item ${itemId} auf ${columns[columnIndex]}`);
+          // Stelle sicher, dass die Spalten-Arrays groß genug sind
+          while (columns.length <= nAdjParamValIndex) {
+            columns.push("=");
           }
           
+          // Setze Standardwerte
+          columns[dwDestParamIndex] = "_NONE";
+          columns[nAdjParamValIndex] = "=";
+        }
+        
+        // Durchlaufe alle vorhandenen Effekte (maximal 6)
+        for (let i = 0; i < Math.min(item.effects.length, 6); i++) {
+          const effect = item.effects[i];
+          
+          if (!effect || !effect.type || effect.type === '-' || effect.type === '_NONE') {
+            continue; // Überspringe leere oder ungültige Effekte
+          }
+          
+          // dwDestParam Feld aktualisieren (1-indexiert im Spaltennamen, aber 0-indexiert im Array)
+          const dwDestParamIndex = 82 + i;
           // nAdjParamVal Feld aktualisieren
-          const nAdjParamValField = `nAdjParamVal${i+1}`;
-          const adjParamFieldInfo = fieldMap.get(nAdjParamValField);
-          if (adjParamFieldInfo) {
-            // Position in columns berechnen: nAdjParamVal1 ist in column 88 (0-indexiert)
-            const columnIndex = 88 + i;
-            // Wenn es einen Effekt gibt, setze den Wert, sonst setze auf "=" oder leer
-            columns[columnIndex] = effect && effect.type !== '-' ? effect.value : "=";
-            console.log(`Aktualisiere ${nAdjParamValField} für Item ${itemId} auf ${columns[columnIndex]}`);
+          const nAdjParamValIndex = 88 + i;
+          
+          // Stelle sicher, dass die Spalten-Arrays groß genug sind
+          while (columns.length <= nAdjParamValIndex) {
+            columns.push("=");
+          }
+          
+          // Setze den Typ und Wert wenn vorhanden
+          if (effect.type && effect.type !== '-') {
+            columns[dwDestParamIndex] = effect.type;
+            columns[nAdjParamValIndex] = effect.value !== undefined ? effect.value.toString() : "0";
+            console.log(`Setze Effekt ${i+1} für Item ${itemId}: ${effect.type}=${effect.value}`);
           }
         }
       }

@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useMemo, lazy, Suspense, Component, ErrorInfo, useRef } from "react";
+import { useState, useEffect, memo, useMemo, lazy, Suspense, Component, ErrorInfo, useRef, createContext, useContext } from "react";
 import { ResourceItem, EffectData } from "../types/fileTypes";
 import { trackModifiedFile, trackItemChanges, formatItemIconValue } from "../utils/file/fileOperations";
 import { updateItemIdInDefine } from "../utils/file/defineItemParser";
@@ -98,7 +98,7 @@ interface ResourceEditorProps {
   editMode?: boolean;
 }
 
-// Performance-Optimierung: Memoized Editor-Komponente
+// Main editor component
 const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceEditorProps) => {
   const [localItem, setLocalItem] = useState<ResourceItem>(item);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -276,11 +276,6 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
     };
   }, [localItem, editMode, onUpdateItem]);
   
-  /**
-   * Verwende die importierte formatItemIconValue-Funktion aus fileOperations.ts
-   * Diese Funktion wurde hier entfernt und durch den Import ersetzt
-   */
-  
   // Performance-Optimierung: Memoized handleEffectChange
   const handleEffectChange = useMemo(() => {
     return (index: number, field: 'type' | 'value', value: string | number) => {
@@ -303,16 +298,34 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
         };
       }
       
+      // Track effects modification in spec_item.txt and defineItem.h
+      // Die Effekte werden sowohl in der spec_item.txt als auch in defineItem.h gespeichert
+      
+      // Setze alle Effekte, die '-' als Typ haben, zurück und entferne leere Effekte
+      const cleanedEffects = updatedEffects
+        .filter(effect => effect.type && effect.type !== '-' && effect.type !== '_NONE');
+      
+      // Aktualisiere das Item im lokalen State
       const updatedItem = {
         ...localItem,
         effects: updatedEffects
       };
       
-      // Track effects modification in defineItem.h
-      trackModifiedFile("defineItem.h", `Effect ${index} ${field} updated for item ${localItem.id}`);
-      
+      // Aktualisiere lokales State
       setLocalItem(updatedItem);
+      
+      // Direkt Änderungen speichern in spec_item.txt durch Aufruf von trackItemChanges
+      // Dies stellt sicher, dass die Effekte sofort in der Datei aktualisiert werden
+      trackItemChanges(updatedItem, true).catch(error => {
+        console.error("Fehler beim Speichern der Effekte:", error);
+        toast.error(`Fehler beim Speichern der Effekte: ${error.message}`);
+      });
+      
+      // Informiere den Parent über die Änderung
       onUpdateItem(updatedItem, `effect_${index}_${field}`, oldEffect ? oldEffect[field] : null);
+      
+      // Markiere Änderungen als nicht gespeichert
+      setHasUnsavedChanges(true);
     };
   }, [localItem, editMode, onUpdateItem]);
   

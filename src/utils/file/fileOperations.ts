@@ -316,7 +316,7 @@ export const trackItemChanges = async (
 ): Promise<void> => {
   if (!item) return;
 
-  console.log(`Tracking item changes for ${item.id || 'unknown item'}`);
+  console.log(`Tracking item changes for ${item.id || 'unknown item'} with effects:`, item.effects);
   
   try {
     // Sicherstellen, dass Item-Icon korrekt formatiert ist (falls vorhanden)
