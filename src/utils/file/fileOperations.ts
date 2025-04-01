@@ -82,13 +82,34 @@ export const trackModifiedFile = (fileName: string, content: string, metadata?: 
     // Prüfe, ob die Datei bereits in den modifizierten Dateien ist
     const existingIndex = modifiedFiles.findIndex(file => file.name === fileName);
     
+    // Erstelle ein erweitertes Metadata-Objekt
+    const extendedMetadata = {
+      ...metadata,
+      lastModified: Date.now(),
+      fields: {
+        ...metadata?.fields,
+        // Spezifische Felder für verschiedene Dateitypen
+        mdlDyna: {
+          fileName: metadata?.fields?.mdlDyna?.fileName || metadata?.modelFile,
+          define: metadata?.fields?.mdlDyna?.define || metadata?.define,
+          itemIcon: metadata?.fields?.mdlDyna?.itemIcon || metadata?.itemIcon
+        },
+        specItem: {
+          define: metadata?.fields?.specItem?.define || metadata?.define,
+          itemIcon: metadata?.fields?.specItem?.itemIcon || metadata?.itemIcon,
+          displayName: metadata?.fields?.specItem?.displayName || metadata?.displayName,
+          description: metadata?.fields?.specItem?.description || metadata?.description
+        }
+      }
+    };
+    
     if (existingIndex >= 0) {
       console.log(`Datei ${fileName} ist bereits als modifiziert markiert, aktualisiere Inhalt`);
       modifiedFiles[existingIndex] = {
         ...modifiedFiles[existingIndex],
         content,
         lastModified: Date.now(),
-        metadata: metadata || modifiedFiles[existingIndex].metadata
+        metadata: extendedMetadata
       };
     } else {
       console.log(`Füge ${fileName} zu modifizierten Dateien hinzu`);
@@ -96,16 +117,35 @@ export const trackModifiedFile = (fileName: string, content: string, metadata?: 
         name: fileName,
         content,
         lastModified: Date.now(),
-        metadata
+        metadata: extendedMetadata
       });
     }
     
     // Debug-Info
     console.log(`Modifizierte Dateien: ${modifiedFiles.map(f => f.name).join(', ')}`);
+    console.log(`Metadata für ${fileName}:`, extendedMetadata);
     
-    // Speichere propItem.txt.txt Änderungen sofort, wenn das Flag gesetzt ist
-    if (fileName === 'propItem.txt.txt' && metadata?.shouldSaveImmediately) {
-      savePropItemChanges(metadata.itemsToSave || []);
+    // Speichere Änderungen sofort, wenn das Flag gesetzt ist
+    if (metadata?.shouldSaveImmediately) {
+      const fileType = fileName.toLowerCase();
+      if (fileType.includes('propitem.txt.txt')) {
+        savePropItemChanges(metadata.itemsToSave || []);
+      } else if (fileType.includes('defineitem.h')) {
+        saveDefineItemChanges(metadata.itemsToSave || []);
+      } else if (fileType.includes('mdldyna.inc')) {
+        saveMdlDynaChanges(metadata.itemsToSave || []);
+      } else if (fileType.includes('spec_item.txt')) {
+        // Speichere Spec_Item.txt Änderungen
+        const specItemContent = serializeWithNameReplacement({
+          items: metadata.itemsToSave || [],
+          isSpecItemFile: true
+        }, content);
+        
+        saveTextFile(specItemContent, "Spec_Item.txt", "public/resource/Spec_Item.txt");
+      } else {
+        // Für andere Dateitypen verwende die Standard-Speichermethode
+        saveTextFile(content, fileName);
+      }
     }
   } catch (error) {
     console.error(`Fehler beim Tracking der Datei ${fileName}:`, error);
@@ -210,8 +250,8 @@ export const trackPropItemChanges = async (
     // Erstelle das Item-Objekt explizit
     const itemObj = {
       id: propItemId,
-      name: itemName,
-      displayName: displayName,
+    name: itemName,
+    displayName: displayName,
       description: description,
       data: {
         szName: propItemId
@@ -246,7 +286,7 @@ export const ensurePropItemConsistency = (fileData: any): void => {
   try {
     console.log("Konsistenzprüfung für Item-Namen und Beschreibungen gestartet");
     
-    if (!fileData || !fileData.items || !Array.isArray(fileData.items)) {
+  if (!fileData || !fileData.items || !Array.isArray(fileData.items)) {
       console.warn("Ungültige fileData für ensurePropItemConsistency");
       return;
     }
@@ -310,12 +350,12 @@ export const ensurePropItemConsistency = (fileData: any): void => {
 export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
   try {
     console.log(`savePropItemChanges aufgerufen mit ${items?.length || 0} Items`);
-    
+  
     if (!items || !Array.isArray(items) || items.length === 0) {
       console.warn("Keine Items zum Speichern in savePropItemChanges");
-      return false;
-    }
-    
+    return false;
+  }
+  
     // Finde heraus, welche Items Änderungen haben
     const modifiedItems = items.filter(item => 
       item && (item.displayName !== undefined || item.description !== undefined)
@@ -373,7 +413,7 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
         
         existingLines = existingContent.split(/\r?\n/);
         console.log(`Datei enthält ${existingLines.length} Zeilen`);
-      } else {
+        } else {
         console.warn(`Konnte vorhandene Datei nicht laden, Statuscode: ${response.status}`);
         // Wenn die Datei nicht geladen werden kann, erstellen wir eine neue
         existingLines = [];
@@ -392,9 +432,9 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
     // Update existing lines
     for (let i = 0; i < updatedLines.length; i++) {
       const line = updatedLines[i];
-      const parts = line.split('\t');
+        const parts = line.split('\t');
       
-      if (parts.length >= 2) {
+        if (parts.length >= 2) {
         const id = parts[0];
         
         if (updatedEntries.has(id)) {
@@ -425,7 +465,7 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
     
     // Speichere den aktualisierten Inhalt direkt in die Datei
     const fileName = "propItem.txt.txt";
-    const savePath = "resource/propItem.txt.txt";
+    const savePath = "public/resource/propItem.txt.txt";
     
     try {
       console.log(`Speichere Datei als ${savePath}`);
@@ -470,6 +510,120 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
     }
   } catch (error) {
     console.error(`Allgemeiner Fehler in savePropItemChanges:`, error);
+    return false;
+  }
+};
+
+// Speichere geänderte defineItem.h Einträge
+export const saveDefineItemChanges = async (items: any[]): Promise<boolean> => {
+  try {
+    console.log(`saveDefineItemChanges aufgerufen mit ${items?.length || 0} Items`);
+    
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      console.warn("Keine Items zum Speichern in saveDefineItemChanges");
+      return false;
+    }
+    
+    // Finde heraus, welche Items Änderungen haben
+    const modifiedItems = items.filter(item => 
+      item && (item.effects !== undefined || item.data !== undefined)
+    );
+    
+    if (modifiedItems.length === 0) {
+      console.warn("Keine zu modifizierenden Items gefunden");
+      return false;
+    }
+    
+    console.log(`${modifiedItems.length} zu modifizierende Items gefunden`);
+    
+    // Erstelle den Inhalt für defineItem.h
+    let content = '';
+    
+    modifiedItems.forEach(item => {
+      if (!item) return;
+      
+      // Generiere die Define-Zeile
+      const defineLine = `#define ${item.id}`;
+      content += defineLine + '\n';
+      
+      // Füge Effekte hinzu, wenn vorhanden
+      if (item.effects && Array.isArray(item.effects)) {
+        item.effects.forEach((effect: any, index: number) => {
+          if (effect && effect.type && effect.value !== undefined) {
+            content += `\t${effect.type}\t${effect.value}\n`;
+          }
+        });
+      }
+      
+      // Füge eine Leerzeile zwischen den Items hinzu
+      content += '\n';
+    });
+    
+    // Speichere die Änderungen
+    const success = await saveTextFile(content, "defineItem.h", "public/resource/defineItem.h");
+    
+    if (success) {
+      console.log("defineItem.h erfolgreich gespeichert");
+      return true;
+    } else {
+      console.error("Fehler beim Speichern von defineItem.h");
+      return false;
+    }
+  } catch (error) {
+    console.error(`Allgemeiner Fehler in saveDefineItemChanges:`, error);
+    return false;
+  }
+};
+
+// Speichere geänderte mdlDyna.inc Einträge
+export const saveMdlDynaChanges = async (items: any[]): Promise<boolean> => {
+  try {
+    console.log(`saveMdlDynaChanges aufgerufen mit ${items?.length || 0} Items`);
+    
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      console.warn("Keine Items zum Speichern in saveMdlDynaChanges");
+      return false;
+    }
+    
+    // Finde heraus, welche Items Änderungen haben
+    const modifiedItems = items.filter(item => 
+      item && (item.modelFile !== undefined || item.data?.dwItemKind !== undefined)
+    );
+    
+    if (modifiedItems.length === 0) {
+      console.warn("Keine zu modifizierenden Items gefunden");
+      return false;
+    }
+    
+    console.log(`${modifiedItems.length} zu modifizierende Items gefunden`);
+    
+    // Erstelle den Inhalt für mdlDyna.inc
+    let content = '';
+    
+    modifiedItems.forEach(item => {
+      if (!item) return;
+      
+      // Generiere die Include-Zeile mit dem korrekten Dateinamen
+      const fileName = item.modelFile || item.fields?.mdlDyna?.fileName || '';
+      const includeLine = `#include "${fileName}"`;
+      content += includeLine + '\n';
+      
+      // Füge eine Leerzeile zwischen den Items hinzu
+      content += '\n';
+    });
+    
+    // Speichere die Änderungen
+    const success = await saveTextFile(content, "mdlDyna.inc", "public/resource/mdlDyna.inc");
+    
+    if (success) {
+      console.log("mdlDyna.inc erfolgreich gespeichert");
+      return true;
+    } else {
+      console.error("Fehler beim Speichern von mdlDyna.inc");
+      return false;
+    }
+  } catch (error) {
+    console.error(`Allgemeiner Fehler in saveMdlDynaChanges:`, error);
     return false;
   }
 };
@@ -551,7 +705,7 @@ export const saveWithFileSystemAPI = async (content: string, fileName: string): 
     
     console.log(`Datei erfolgreich über FileSystem API gespeichert: ${fileName}`);
     return true;
-  } catch (error) {
+      } catch (error) {
     console.error('Fehler beim Speichern über FileSystem API:', error);
     return false;
   }
@@ -603,18 +757,18 @@ export const saveTextFile = async (
     } else {
       // Standard-Pfad für Ressourcendateien
       // Entferne den führenden Slash, um doppelte Pfade zu vermeiden
-      savePath = `resource/${fileName}`;
+      savePath = `public/resource/${fileName}`;
     }
     
-    // Stelle sicher, dass der Pfad korrekt ist, aber vermeide doppelte resource-Pfade
-    if (savePath.startsWith('/resource/')) {
-      // Entferne einen führenden Slash, wenn der Pfad bereits mit /resource/ beginnt
+    // Stelle sicher, dass der Pfad korrekt ist, aber vermeide doppelte public/resource-Pfade
+    if (savePath.startsWith('/public/resource/')) {
+      // Entferne einen führenden Slash, wenn der Pfad bereits mit /public/resource/ beginnt
       savePath = savePath.substring(1);
-    } else if (savePath.startsWith('resource/')) {
+    } else if (savePath.startsWith('public/resource/')) {
       // Bereits korrekt formatiert
     } else if (!savePath.includes(':\\') && !savePath.startsWith('.\\')) {
-      // Füge resource/ hinzu, wenn es kein absoluter Windows-Pfad ist
-      savePath = `resource/${savePath}`;
+      // Füge public/resource/ hinzu, wenn es kein absoluter Windows-Pfad ist
+      savePath = `public/resource/${savePath}`;
     }
     
     console.log(`Korrigierter Speicherpfad: ${savePath}`);
@@ -844,21 +998,21 @@ export const saveTextFile2 = async (
     }
 
     // Speichern der Datei mit dem aktuellen Inhalt (der jetzt serialisiert sein könnte)
-    // Verwende ein einheitliches Format für den Pfad, ohne doppelte resource-Einträge
+    // Verwende ein einheitliches Format für den Pfad, ohne doppelte public/resource-Einträge
     let savePath = '';
     if (isFullPath) {
       savePath = targetFileInfo.path;
-    } else {
-      // Entferne führende Slashes und vermeide doppelte resource-Pfade
+      } else {
+      // Entferne führende Slashes und vermeide doppelte public/resource-Pfade
       let filePath = targetFileInfo.path;
       if (filePath.startsWith('/')) {
         filePath = filePath.substring(1);
       }
       
-      if (filePath.startsWith('resource/')) {
+      if (filePath.startsWith('public/resource/')) {
         savePath = filePath;
       } else {
-        savePath = `resource/${filePath}`;
+        savePath = `public/resource/${filePath}`;
       }
     }
     
@@ -885,7 +1039,7 @@ export const saveTextFile2 = async (
       modifiedFiles = modifiedFiles.filter(file => file.name !== targetFileInfo.path);
       
       return 'SUCCESS';
-    } else {
+            } else {
       // Verbesserte Fehlerbehandlung
       let errorMessage = '';
       if (result && typeof result === 'object') {
@@ -931,8 +1085,10 @@ export const saveAllModifiedFiles = async (context: any): Promise<string[]> => {
     // Wenn die Datei eine Spec_Item.txt oder propItem.txt.txt ist, stelle sicher, dass wir die korrekten Serialisierungsfunktionen verwenden
     const isSpecItemFile = fileInfo.name.toLowerCase().includes('spec_item.txt');
     const isPropItemFile = fileInfo.name.toLowerCase().includes('propitem.txt.txt');
+    const isDefineItemFile = fileInfo.name.toLowerCase().includes('defineitem.h');
+    const isMdlDynaFile = fileInfo.name.toLowerCase().includes('mdldyna.inc');
     
-    if ((isSpecItemFile || isPropItemFile) && typeof content === 'string' && content.trim().startsWith('{')) {
+    if ((isSpecItemFile || isPropItemFile || isDefineItemFile || isMdlDynaFile) && typeof content === 'string' && content.trim().startsWith('{')) {
       try {
         const parsedContent = JSON.parse(content);
         
@@ -943,16 +1099,22 @@ export const saveAllModifiedFiles = async (context: any): Promise<string[]> => {
         }
         
         // Debugging-Ausgabe für Items mit Änderungen
-        const itemsWithNameChanges = parsedContent.items?.filter((item: any) => 
-          item.displayName !== undefined || item.description !== undefined
+        const itemsWithChanges = parsedContent.items?.filter((item: any) => 
+          item.displayName !== undefined || 
+          item.description !== undefined ||
+          item.effects !== undefined ||
+          item.modelFile !== undefined ||
+          item.data !== undefined
         );
         
-        if (itemsWithNameChanges?.length > 0) {
-          console.log(`${fileInfo.name} enthält ${itemsWithNameChanges.length} Items mit Namens-/Beschreibungsänderungen:`);
-          itemsWithNameChanges.slice(0, 3).forEach((item: any, index: number) => {
+        if (itemsWithChanges?.length > 0) {
+          console.log(`${fileInfo.name} enthält ${itemsWithChanges.length} Items mit Änderungen:`);
+          itemsWithChanges.slice(0, 3).forEach((item: any, index: number) => {
             console.log(`Item ${index + 1}: ${item.name || item.id || 'unbekannt'}`);
             if (item.displayName !== undefined) console.log(`  Name: "${item.displayName}"`);
             if (item.description !== undefined) console.log(`  Beschreibung: "${item.description?.substring(0, 30)}..."`);
+            if (item.effects !== undefined) console.log(`  Effekte: ${item.effects.length}`);
+            if (item.modelFile !== undefined) console.log(`  Model: "${item.modelFile}"`);
           });
         }
         
@@ -968,6 +1130,12 @@ export const saveAllModifiedFiles = async (context: any): Promise<string[]> => {
           console.log(`Serialisierten Inhalt für ${fileInfo.name} erstellt (${content.length} Bytes)`);
         } else if (isPropItemFile) {
           content = serializePropItems(parsedContent.items || []);
+          console.log(`Serialisierten Inhalt für ${fileInfo.name} erstellt (${content.length} Bytes)`);
+        } else if (isDefineItemFile) {
+          content = serializeDefineItems(parsedContent.items || []);
+          console.log(`Serialisierten Inhalt für ${fileInfo.name} erstellt (${content.length} Bytes)`);
+        } else if (isMdlDynaFile) {
+          content = serializeMdlDynaItems(parsedContent.items || []);
           console.log(`Serialisierten Inhalt für ${fileInfo.name} erstellt (${content.length} Bytes)`);
         }
       } catch (err) {
@@ -1054,4 +1222,49 @@ export const readTextFile = (file: File): Promise<string> => {
       reader.readAsText(file);
     }
   });
+};
+
+// Hilfsfunktionen für die Serialisierung verschiedener Dateitypen
+const serializeDefineItems = (items: any[]): string => {
+  let content = '';
+  
+  items.forEach(item => {
+    if (!item) return;
+    
+    // Generiere die Define-Zeile
+    const defineLine = `#define ${item.id}`;
+    content += defineLine + '\n';
+    
+    // Füge Effekte hinzu, wenn vorhanden
+    if (item.effects && Array.isArray(item.effects)) {
+      item.effects.forEach((effect: any) => {
+        if (effect && effect.type && effect.value !== undefined) {
+          content += `\t${effect.type}\t${effect.value}\n`;
+        }
+      });
+    }
+    
+    // Füge eine Leerzeile zwischen den Items hinzu
+    content += '\n';
+  });
+  
+  return content;
+};
+
+const serializeMdlDynaItems = (items: any[]): string => {
+  let content = '';
+  
+  items.forEach(item => {
+    if (!item) return;
+    
+    // Generiere die Include-Zeile mit dem korrekten Dateinamen
+    const fileName = item.modelFile || item.fields?.mdlDyna?.fileName || '';
+    const includeLine = `#include "${fileName}"`;
+    content += includeLine + '\n';
+    
+    // Füge eine Leerzeile zwischen den Items hinzu
+    content += '\n';
+  });
+  
+  return content;
 };

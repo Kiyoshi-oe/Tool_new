@@ -24,11 +24,17 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
   
   // Sammle die Änderungen zur Übersicht
   const itemsWithChanges = fileData.items.filter(item => 
-    item && (item.displayName !== undefined || item.description !== undefined)
+    item && (
+      item.displayName !== undefined || 
+      item.description !== undefined ||
+      item.fields?.specItem?.define !== undefined ||
+      item.fields?.specItem?.itemIcon !== undefined ||
+      item.fields?.mdlDyna?.fileName !== undefined
+    )
   );
   
   if (itemsWithChanges.length === 0) {
-    console.log("Keine Änderungen an Namen oder Beschreibungen gefunden");
+    console.log("Keine Änderungen gefunden");
     return originalContent || "";
   }
   
@@ -37,40 +43,49 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
     ? originalContent 
     : "";
   
-  console.log(`${itemsWithChanges.length} Items mit Namens-/Beschreibungsänderungen gefunden`);
+  console.log(`${itemsWithChanges.length} Items mit Änderungen gefunden`);
   
-  // Hier könnten wir explizit debuggen
+  // Debug-Ausgabe für die ersten 3 Items
   itemsWithChanges.slice(0, 3).forEach(item => {
     const itemId = item.name || item.id || 'unbekannt';
     console.log(`- Item ${itemId}`);
     if (item.displayName !== undefined) console.log(`  Neuer Name: "${item.displayName}"`);
     if (item.description !== undefined) console.log(`  Neue Beschreibung: "${item.description?.substring(0, 30) || ''}..."`);
+    if (item.fields?.specItem?.define !== undefined) console.log(`  Neues Define: "${item.fields.specItem.define}"`);
+    if (item.fields?.specItem?.itemIcon !== undefined) console.log(`  Neues Item Icon: "${item.fields.specItem.itemIcon}"`);
+    if (item.fields?.mdlDyna?.fileName !== undefined) console.log(`  Neuer Dateiname: "${item.fields.mdlDyna.fileName}"`);
   });
   
-  // Wenn kein gültiger originalContent vorhanden ist, können wir keinen Text erzeugen
+  // Wenn kein gültiger originalContent vorhanden ist, erstelle einen neuen
   if (!validOriginalContent) {
     console.warn("Kein gültiger originalContent für Ersetzung vorhanden, erstelle neuen Inhalt");
     
-    // Versuche einen minimalen Text zu erzeugen basierend auf den vorhandenen Items
-    if (fileData.header && Array.isArray(fileData.header)) {
-      // Erstelle einen Header und Items-Text, falls header vorhanden ist
-      const headerLine = fileData.header.join("\t");
-      
-      const lines = [headerLine];
-      fileData.items.forEach(item => {
-        if (item && item.data) {
-          const values = fileData.header.map((col: string) => {
-            return item.data[col] !== undefined ? item.data[col] : "=";
-          });
-          lines.push(values.join("\t"));
-        }
-      });
-      
-      return lines.join("\n");
-    }
+    // Erstelle einen Header und Items-Text
+    const header = [
+      'ID',
+      'Define',
+      'Item Icon',
+      'Display Name',
+      'Description',
+      'Effects'
+    ];
     
-    // Fallback, wenn auch kein Header vorhanden ist
-    return "";
+    const lines = [header.join('\t')];
+    fileData.items.forEach(item => {
+      if (item) {
+        const values = [
+          item.id || '',
+          item.fields?.specItem?.define || '',
+          item.fields?.specItem?.itemIcon || '',
+          item.fields?.specItem?.displayName || item.displayName || '',
+          item.fields?.specItem?.description || item.description || '',
+          item.effects ? JSON.stringify(item.effects) : ''
+        ];
+        lines.push(values.join('\t'));
+      }
+    });
+    
+    return lines.join('\n');
   }
   
   // Starte mit dem Original-Content und bearbeite nur Zeilen, die wirklich geändert werden sollen
@@ -79,8 +94,7 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
   // Erstelle ein Mapping von Item-IDs zu den tatsächlichen Zeilen und Positionen in der Datei
   const lines = updatedContent.split(/\r?\n/);
   const itemIdToLineMap = new Map<string, number>();
-  const namePositionMap = new Map<string, { lineIndex: number, startPos: number, endPos: number, line: string }>();
-  const descPositionMap = new Map<string, { lineIndex: number, startPos: number, endPos: number, line: string }>();
+  const fieldPositionMap = new Map<string, Map<string, { lineIndex: number, startPos: number, endPos: number, line: string }>>();
   
   // Analysiere die Datei, um Item-IDs den tatsächlichen Zeilen zuzuordnen
   console.log("Analysiere Original-Datei nach Item-IDs und Positionen...");
@@ -98,47 +112,26 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
           itemIdToLineMap.set(itemId, index);
           console.log(`Item ${itemId} gefunden in Zeile ${index + 1}`);
           
-          // Versuche auch, Name und Beschreibung Positionen zu identifizieren
-          // Dies ist abhängig vom genauen Format der Datei und muss angepasst werden
-          const columns = line.split('\t');
-          
-          // Beispiel für ein Format: Wir suchen nach der Spalte, die den Namen enthält
-          // Hier müssen wir die Position in der Zeile finden, an der der Name steht
-          for (let i = 0; i < columns.length; i++) {
-            // Für Namen (oft in der 2. oder 3. Spalte)
-            if (i === 1 || i === 2) {
-              let currentPos = 0;
-              for (let j = 0; j < i; j++) {
-                currentPos += columns[j].length + 1; // +1 für den Tab
-              }
-              
-              namePositionMap.set(itemId, {
-                lineIndex: index,
-                startPos: currentPos,
-                endPos: currentPos + columns[i].length,
-                line: line
-              });
-              
-              console.log(`Name für ${itemId} in Spalte ${i+1}, Position ${currentPos}-${currentPos + columns[i].length}`);
-            }
-            
-            // Für Beschreibungen (oft in der 3. oder 4. Spalte)
-            if (i === 2 || i === 3) {
-              let currentPos = 0;
-              for (let j = 0; j < i; j++) {
-                currentPos += columns[j].length + 1; // +1 für den Tab
-              }
-              
-              descPositionMap.set(itemId, {
-                lineIndex: index,
-                startPos: currentPos,
-                endPos: currentPos + columns[i].length,
-                line: line
-              });
-              
-              console.log(`Beschreibung für ${itemId} in Spalte ${i+1}, Position ${currentPos}-${currentPos + columns[i].length}`);
-            }
+          // Initialisiere das Field-Map für dieses Item, falls noch nicht vorhanden
+          if (!fieldPositionMap.has(itemId)) {
+            fieldPositionMap.set(itemId, new Map());
           }
+          
+          // Finde die Positionen für alle Felder
+          const columns = line.split('\t');
+          let currentPos = 0;
+          
+          columns.forEach((col, i) => {
+            const fieldMap = fieldPositionMap.get(itemId)!;
+            
+            // Speichere die Position für jedes relevante Feld
+            if (i === 1) fieldMap.set('define', { lineIndex: index, startPos: currentPos, endPos: currentPos + col.length, line });
+            if (i === 2) fieldMap.set('itemIcon', { lineIndex: index, startPos: currentPos, endPos: currentPos + col.length, line });
+            if (i === 3) fieldMap.set('displayName', { lineIndex: index, startPos: currentPos, endPos: currentPos + col.length, line });
+            if (i === 4) fieldMap.set('description', { lineIndex: index, startPos: currentPos, endPos: currentPos + col.length, line });
+            
+            currentPos += col.length + 1; // +1 für den Tab
+          });
         }
       }
     }
@@ -158,45 +151,43 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
     
     // Wenn wir das Item in der Datei gefunden haben
     if (itemIdToLineMap.has(itemId)) {
-      // Namensänderung
-      if (item.displayName !== undefined && namePositionMap.has(itemId)) {
-        const nameInfo = namePositionMap.get(itemId)!;
-        console.log(`Ändere Namen in Zeile ${nameInfo.lineIndex + 1} von "${nameInfo.line.substring(nameInfo.startPos, nameInfo.endPos)}" zu "${item.displayName}"`);
-        
-        // Teile die Zeile in Spalten auf
-        const columns = updatedLines[nameInfo.lineIndex].split('\t');
-        
-        // Ersetze die entsprechende Spalte
-        for (let i = 0; i < columns.length; i++) {
-          if (i === 1 || i === 2) {
-            columns[i] = item.displayName;
-            break;
-          }
+      const fieldMap = fieldPositionMap.get(itemId);
+      if (!fieldMap) continue;
+      
+      // Teile die Zeile in Spalten auf
+      const columns = updatedLines[itemIdToLineMap.get(itemId)!].split('\t');
+      
+      // Aktualisiere die Felder
+      if (item.fields?.specItem?.define !== undefined) {
+        const fieldInfo = fieldMap.get('define');
+        if (fieldInfo) {
+          columns[1] = item.fields.specItem.define;
         }
-        
-        // Setze die Zeile wieder zusammen
-        updatedLines[nameInfo.lineIndex] = columns.join('\t');
       }
       
-      // Beschreibungsänderung
-      if (item.description !== undefined && descPositionMap.has(itemId)) {
-        const descInfo = descPositionMap.get(itemId)!;
-        console.log(`Ändere Beschreibung in Zeile ${descInfo.lineIndex + 1}`);
-        
-        // Teile die Zeile in Spalten auf
-        const columns = updatedLines[descInfo.lineIndex].split('\t');
-        
-        // Ersetze die entsprechende Spalte
-        for (let i = 0; i < columns.length; i++) {
-          if (i === 2 || i === 3) {
-            columns[i] = item.description;
-            break;
-          }
+      if (item.fields?.specItem?.itemIcon !== undefined) {
+        const fieldInfo = fieldMap.get('itemIcon');
+        if (fieldInfo) {
+          columns[2] = item.fields.specItem.itemIcon;
         }
-        
-        // Setze die Zeile wieder zusammen
-        updatedLines[descInfo.lineIndex] = columns.join('\t');
       }
+      
+      if (item.fields?.specItem?.displayName !== undefined || item.displayName !== undefined) {
+        const fieldInfo = fieldMap.get('displayName');
+        if (fieldInfo) {
+          columns[3] = item.fields?.specItem?.displayName || item.displayName;
+        }
+      }
+      
+      if (item.fields?.specItem?.description !== undefined || item.description !== undefined) {
+        const fieldInfo = fieldMap.get('description');
+        if (fieldInfo) {
+          columns[4] = item.fields?.specItem?.description || item.description;
+        }
+      }
+      
+      // Setze die Zeile wieder zusammen
+      updatedLines[itemIdToLineMap.get(itemId)!] = columns.join('\t');
     } else {
       console.warn(`Item ${itemId} nicht in der Original-Datei gefunden, Änderungen werden nicht angewendet`);
     }
@@ -204,71 +195,6 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
   
   // Setze die aktualisierten Zeilen wieder zu einem String zusammen
   updatedContent = updatedLines.join('\n');
-  
-  // Alternative Methode: Verwende reguläre Ausdrücke für gezielte Ersetzungen
-  // Dies ist eine Fallback-Methode, falls die Zeilennummerierung nicht funktioniert
-  if (updatedContent === validOriginalContent && itemsWithChanges.length > 0) {
-    console.log("Keine Änderungen durch direktes Ersetzen gefunden, versuche alternative Methode...");
-    
-    // Für jedes Item mit Änderungen versuchen wir, den Namen und die Beschreibung zu ersetzen
-    for (const item of itemsWithChanges) {
-      if (!item || !item.id) continue;
-      
-      try {
-        const itemId = item.id;
-        const escItemId = escapeRegExp(itemId);
-        
-        // Für Namen: Wir suchen Zeilen mit der Item-ID und ersetzen den Namen
-        if (item.displayName !== undefined) {
-          // Passen Sie diesen regulären Ausdruck je nach Dateiformat an
-          const nameRegex = new RegExp(`(.*${escItemId}.*?\\t)([^\\t]+)(\\t.*)`, 'gm');
-          
-          const beforeReplace = updatedContent;
-          updatedContent = updatedContent.replace(nameRegex, (match, before, oldName, after) => {
-            console.log(`RegEx: Ändere Namen für ${itemId} von "${oldName}" zu "${item.displayName}"`);
-            return `${before}${item.displayName}${after}`;
-          });
-          
-          if (beforeReplace === updatedContent) {
-            console.warn(`RegEx: Konnte keinen Namen für Item ${itemId} ersetzen`);
-          }
-        }
-        
-        // Für Beschreibungen: Ähnlich wie bei Namen, aber angepasst für Beschreibungen
-        if (item.description !== undefined) {
-          // Passen Sie diesen regulären Ausdruck je nach Dateiformat an
-          const descRegex = new RegExp(`(.*${escItemId}.*?\\t[^\\t]+\\t)([^\\t]*)(\\t.*)`, 'gm');
-          
-          const beforeReplace = updatedContent;
-          updatedContent = updatedContent.replace(descRegex, (match, before, oldDesc, after) => {
-            console.log(`RegEx: Ändere Beschreibung für ${itemId}`);
-            return `${before}${item.description}${after}`;
-          });
-          
-          if (beforeReplace === updatedContent) {
-            console.warn(`RegEx: Konnte keine Beschreibung für Item ${itemId} ersetzen`);
-          }
-        }
-      } catch (error) {
-        console.error(`Fehler beim RegEx-Ersetzen für Item ${item.id}:`, error);
-      }
-    }
-  }
-  
-  // Überprüfung, ob die wichtigsten Änderungen im Text enthalten sind
-  let allChangesIncluded = true;
-  for (const item of itemsWithChanges.slice(0, 5)) { // Prüfe die ersten 5 Änderungen
-    if (item.displayName && !updatedContent.includes(item.displayName)) {
-      console.warn(`Warnung: Name "${item.displayName}" nicht im serialisierten Text gefunden!`);
-      allChangesIncluded = false;
-    }
-  }
-  
-  if (!allChangesIncluded) {
-    console.warn("Nicht alle Änderungen wurden in den Text übernommen. Überprüfe das Ergebnis.");
-  } else {
-    console.log("Alle überprüften Änderungen wurden erfolgreich in den Text übernommen.");
-  }
   
   return updatedContent;
 };
