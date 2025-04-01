@@ -79,69 +79,109 @@ export const trackModifiedFile = (fileName: string, content: string, metadata?: 
       return;
     }
     
-    // Prüfe, ob die Datei bereits in den modifizierten Dateien ist
-    const existingIndex = modifiedFiles.findIndex(file => file.name === fileName);
+    // Spezielle Behandlung für Spec_Item.txt - Stelle sicher, dass Item Icons korrekt formatiert sind
+    if (fileName.toLowerCase().includes('spec_item.txt')) {
+      // Check if we need to format item icons
+      if (metadata?.fields?.specItem?.itemIcon || 
+          metadata?.specItem?.itemIcon || 
+          (metadata?.fields && metadata.fields.specItem && metadata.fields.specItem.itemIcon) ||
+          (metadata?.specItem && metadata.specItem.itemIcon)) {
+        
+        // Finde den Wert des Item Icons
+        let itemIcon = metadata?.fields?.specItem?.itemIcon || 
+                      metadata?.specItem?.itemIcon || 
+                      (metadata?.fields && metadata.fields.specItem && metadata.fields.specItem.itemIcon) ||
+                      (metadata?.specItem && metadata.specItem.itemIcon);
+        
+        if (itemIcon) {
+          console.log(`Item Icon vor Formatierung: "${itemIcon}"`);
+          // Formatiere das Icon mit der Hilfsfunktion
+          const formattedIcon = formatItemIconValue(itemIcon);
+          console.log(`Item Icon nach Formatierung: "${formattedIcon}"`);
+          
+          // Aktualisiere das Icon im Metadata-Objekt
+          if (metadata?.fields?.specItem) {
+            metadata.fields.specItem.itemIcon = formattedIcon;
+          } else if (metadata?.specItem) {
+            metadata.specItem.itemIcon = formattedIcon;
+          }
+          
+          // Aktualisiere auch das Icon im Content, falls es als JSON gespeichert ist
+          try {
+            const contentObj = JSON.parse(content);
+            if (contentObj.item && contentObj.item.itemIcon) {
+              contentObj.item.itemIcon = formattedIcon;
+            } else if (contentObj.fields && contentObj.fields.specItem && contentObj.fields.specItem.itemIcon) {
+              contentObj.fields.specItem.itemIcon = formattedIcon;
+            }
+            content = JSON.stringify(contentObj);
+          } catch (e) {
+            // Ignoriere JSON-Parse-Fehler, das bedeutet, dass der Inhalt kein JSON ist
+          }
+        }
+      }
+    }
     
-    // Erstelle ein erweitertes Metadata-Objekt
+    // Erweitere die Metadaten um zusätzliche Informationen
     const extendedMetadata = {
       ...metadata,
       lastModified: Date.now(),
-      fields: {
-        ...metadata?.fields,
-        // Spezifische Felder für verschiedene Dateitypen
-        mdlDyna: {
-          fileName: metadata?.fields?.mdlDyna?.fileName || metadata?.modelFile,
-          define: metadata?.fields?.mdlDyna?.define || metadata?.define,
-          itemIcon: metadata?.fields?.mdlDyna?.itemIcon || metadata?.itemIcon
-        },
-        specItem: {
-          define: metadata?.fields?.specItem?.define || metadata?.define,
-          itemIcon: metadata?.fields?.specItem?.itemIcon || metadata?.itemIcon,
-          displayName: metadata?.fields?.specItem?.displayName || metadata?.displayName,
-          description: metadata?.fields?.specItem?.description || metadata?.description
-        }
-      }
+      fileName: metadata?.fields?.mdlDyna?.fileName || metadata?.modelFile,
+      type: fileName.toLowerCase().includes('propitem') ? 'propItem' : 
+            fileName.toLowerCase().includes('spec_item') ? 'specItem' : 
+            fileName.toLowerCase().includes('defineitem') ? 'defineItem' : 
+            fileName.toLowerCase().includes('mdldyna') ? 'mdlDyna' : 'unknown'
     };
     
-    if (existingIndex >= 0) {
+    // Prüfe, ob die Datei bereits als modifiziert markiert ist
+    const existingIndex = modifiedFiles.findIndex(file => file.name === fileName);
+    
+    if (existingIndex !== -1) {
       console.log(`Datei ${fileName} ist bereits als modifiziert markiert, aktualisiere Inhalt`);
-      modifiedFiles[existingIndex] = {
-        ...modifiedFiles[existingIndex],
-        content,
-        lastModified: Date.now(),
-        metadata: extendedMetadata
-      };
+      modifiedFiles[existingIndex].content = content;
+      modifiedFiles[existingIndex].metadata = extendedMetadata;
     } else {
       console.log(`Füge ${fileName} zu modifizierten Dateien hinzu`);
       modifiedFiles.push({
         name: fileName,
         content,
-        lastModified: Date.now(),
         metadata: extendedMetadata
       });
     }
     
-    // Debug-Info
-    console.log(`Modifizierte Dateien: ${modifiedFiles.map(f => f.name).join(', ')}`);
+    // Debug-Logging für bessere Nachvollziehbarkeit
     console.log(`Metadata für ${fileName}:`, extendedMetadata);
     
-    // Speichere Änderungen sofort, wenn das Flag gesetzt ist
-    if (metadata?.shouldSaveImmediately) {
-      const fileType = fileName.toLowerCase();
+    // Datei sofort speichern, wenn die Einstellung gesetzt ist
+    const fileType = fileName.toLowerCase();
+    
+    if (metadata?.shouldSaveImmediately || 
+        metadata?.saveDirect || 
+        (fileType.includes('propitem') && metadata?.savePropItemImmediate) || 
+        (fileType.includes('spec_item') && metadata?.saveSpecItemImmediate) || 
+        (fileType.includes('define') && metadata?.saveDefineItemImmediate) || 
+        (fileType.includes('mdldyna') && metadata?.saveMdlDynaImmediate)) {
+      
+      console.log(`Speichere Änderungen für ${fileName} sofort`);
+      
       if (fileType.includes('propitem.txt.txt')) {
-        savePropItemChanges(metadata.itemsToSave || []);
-      } else if (fileType.includes('defineitem.h')) {
-        saveDefineItemChanges(metadata.itemsToSave || []);
-      } else if (fileType.includes('mdldyna.inc')) {
-        saveMdlDynaChanges(metadata.itemsToSave || []);
+        // Verwende die spezialisierte Funktion für propItem.txt.txt
+        savePropItemChanges(metadata?.itemsToSave || []);
       } else if (fileType.includes('spec_item.txt')) {
-        // Speichere Spec_Item.txt Änderungen
+        // Verwende spezialisierte Funktion für Spec_Item.txt mit korrekter Formatierung für Item Icons
+        // Erstelle gesammelten Content mit formatierten Icons
         const specItemContent = serializeWithNameReplacement({
           items: metadata.itemsToSave || [],
           isSpecItemFile: true
         }, content);
         
         saveTextFile(specItemContent, "Spec_Item.txt", "public/resource/Spec_Item.txt");
+      } else if (fileType.includes('defineitem.h')) {
+        // Spezielle Behandlung für defineItem.h
+        saveDefineItemChanges(metadata?.itemsToSave || []);
+      } else if (fileType.includes('mdldyna.inc')) {
+        // Spezielle Behandlung für mdlDyna.inc
+        saveMdlDynaChanges(metadata?.itemsToSave || []);
       } else {
         // Für andere Dateitypen verwende die Standard-Speichermethode
         saveTextFile(content, fileName);
@@ -150,6 +190,23 @@ export const trackModifiedFile = (fileName: string, content: string, metadata?: 
   } catch (error) {
     console.error(`Fehler beim Tracking der Datei ${fileName}:`, error);
   }
+};
+
+/**
+ * Formatiert einen Item-Icon-Wert für die Spec_Item.txt
+ * Stellt sicher, dass das Format mit dreifachen Anführungszeichen korrekt ist
+ */
+export const formatItemIconValue = (value: string): string => {
+  if (!value) return '""""""';
+  
+  // Entferne alle Anführungszeichen (einzelne, doppelte oder dreifache)
+  let cleanValue = value.replace(/^["']{1,3}|["']{1,3}$/g, '');
+  
+  // Debug-Ausgabe für bessere Nachvollziehbarkeit
+  console.log(`Formatiere Item Icon: "${value}" -> "${cleanValue}" -> """${cleanValue}"""`);
+  
+  // Gib den Wert mit dreifachen Anführungszeichen zurück
+  return `"""${cleanValue}"""`;
 };
 
 // Method to serialize the file data back to text format
@@ -219,7 +276,126 @@ export const serializePropItemData = (items: any[]): string => {
   return lines.join("\n");
 };
 
-// Track propItem changes
+/**
+ * Verfolgt Änderungen an einem Item in allen relevanten Dateien
+ * (propItem.txt.txt, Spec_Item.txt, defineItem.h, mdlDyna.inc)
+ */
+export const trackItemChanges = async (
+  item: any,
+  saveImmediately: boolean = false
+): Promise<void> => {
+  if (!item) return;
+
+  console.log(`Tracking item changes for ${item.id || 'unknown item'}`);
+  
+  try {
+    // Sicherstellen, dass Item-Icon korrekt formatiert ist (falls vorhanden)
+    if (item.fields?.specItem?.itemIcon) {
+      // Stelle sicher, dass das Icon dreifache Anführungszeichen hat
+      if (!item.fields.specItem.itemIcon.startsWith('"""') || !item.fields.specItem.itemIcon.endsWith('"""')) {
+        // Formatiere das Icon korrekt mit der Hilfsfunktion
+        item.fields.specItem.itemIcon = formatItemIconValue(item.fields.specItem.itemIcon);
+        console.log(`Item Icon korrekt formatiert: ${item.fields.specItem.itemIcon}`);
+      }
+    }
+    
+    // Tracking für propItem.txt.txt (für Namen und Beschreibungen)
+    if (item.displayName !== undefined || item.description !== undefined) {
+      await trackModifiedFile("propItem.txt.txt", JSON.stringify({
+        type: "propItemUpdate",
+        item: {
+          id: item.id,
+          displayName: item.displayName,
+          description: item.description
+        }
+      }), {
+        itemId: item.id,
+        displayName: item.displayName,
+        description: item.description
+      });
+    }
+    
+    // Tracking für Spec_Item.txt (für Item Icons und andere Felder)
+    if (item.fields?.specItem) {
+      await trackModifiedFile("Spec_Item.txt", JSON.stringify({
+        type: "specItemUpdate",
+        item: {
+          id: item.id,
+          define: item.fields.specItem.define,
+          itemIcon: item.fields.specItem.itemIcon, // Bereits korrekt formatiert
+          displayName: item.displayName,
+          description: item.description
+        }
+      }), {
+        itemId: item.id,
+        specItem: {
+          define: item.fields.specItem.define,
+          itemIcon: item.fields.specItem.itemIcon,
+        }
+      });
+    }
+    
+    // Tracking für defineItem.h
+    if (item.fields?.defineItem || (item.effects && Array.isArray(item.effects))) {
+      await trackModifiedFile("defineItem.h", JSON.stringify({
+        type: "defineItemUpdate",
+        item: {
+          id: item.id,
+          define: item.fields?.specItem?.define || item.name,
+          effects: item.effects
+        }
+      }), {
+        itemId: item.id,
+        defineItem: {
+          define: item.fields?.specItem?.define || item.name,
+          effects: item.effects
+        }
+      });
+    }
+    
+    // Tracking für mdlDyna.inc
+    if (item.fields?.mdlDyna?.fileName || item.modelFile) {
+      const fileName = item.fields?.mdlDyna?.fileName || item.modelFile;
+      await trackModifiedFile("mdlDyna.inc", JSON.stringify({
+        type: "mdlDynaUpdate",
+        item: {
+          id: item.id,
+          fileName: fileName,
+          define: item.fields?.specItem?.define || item.name
+        }
+      }), {
+        itemId: item.id,
+        mdlDyna: {
+          fileName: fileName,
+          define: item.fields?.specItem?.define || item.name
+        }
+      });
+    }
+    
+    if (saveImmediately) {
+      // Alle Änderungen sofort speichern
+      await saveAllModifiedFiles({});
+      
+      // Event auslösen für Aktualisierung der UI
+      if (typeof window !== 'undefined') {
+        const event = new CustomEvent('resourceUpdated', {
+          detail: {
+            type: 'itemSaved',
+            items: [item]
+          }
+        });
+        window.dispatchEvent(event);
+      }
+    }
+    
+    console.log(`Item changes tracked successfully for ${item.id}`);
+  } catch (error) {
+    console.error(`Error tracking item changes for ${item.id}:`, error);
+    throw error;
+  }
+};
+
+// Alte Funktion bleibt aus Kompatibilitätsgründen bestehen
 export const trackPropItemChanges = async (
   itemId: string,
   itemName: string,
@@ -234,48 +410,24 @@ export const trackPropItemChanges = async (
     
     console.log(`Tracking propItem Änderungen für ${itemId} (${itemName}) - Name: "${displayName}", Beschreibung: "${description}"`);
     
-    // Suche nach dem Prop-Item in unseren zwischengespeicherten prop-Items
-    const propItemId = itemId.includes("_PROPITEM_TXT_") 
-      ? itemId 
-      : getPropItemIdFromItem(itemId, itemName);
-    
-    if (!propItemId) {
-      console.warn(`Kein propItemId für ${itemId} (${itemName}) gefunden`);
-      return;
-    }
-    
-    // Sammle Informationen für den Log
-    console.log(`PropItem ID: ${propItemId}, Name: "${displayName}", Beschreibung: "${description}"`);
-    
-    // Erstelle das Item-Objekt explizit
-    const itemObj = {
-      id: propItemId,
-    name: itemName,
-    displayName: displayName,
-      description: description,
+    // Verwende die neue Funktion mit den gleichen Parametern
+    const item = {
+      id: itemId,
+      name: itemName,
+      displayName,
+      description,
+      fields: {
+        specItem: {
+          displayName,
+          description
+        }
+      },
       data: {
-        szName: propItemId
+        szName: itemId
       }
     };
     
-    // Erstelle die zu speichernde Struktur
-    const propItemContent = generatePropItemContent([itemObj]);
-    
-    console.log(`Generierter propItem-Inhalt: "${propItemContent}"`);
-    
-    // Speichere die Änderungen im modifiedFiles-Array
-    trackModifiedFile("propItem.txt.txt", propItemContent, {
-      isPartial: true,
-      sourceItemId: itemId,
-      propItemId,
-      displayName,
-      description,
-      lastModified: Date.now(),
-      shouldSaveImmediately: false, // Änderung: Speichern wird verzögert
-      itemsToSave: [itemObj]
-    });
-    
-    console.log(`PropItem Änderungen für ${propItemId} zur späteren Speicherung vorgemerkt`);
+    await trackItemChanges(item, false);
   } catch (error) {
     console.error("Fehler beim Tracking von propItem Änderungen:", error);
   }
@@ -350,12 +502,12 @@ export const ensurePropItemConsistency = (fileData: any): void => {
 export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
   try {
     console.log(`savePropItemChanges aufgerufen mit ${items?.length || 0} Items`);
-  
+    
     if (!items || !Array.isArray(items) || items.length === 0) {
       console.warn("Keine Items zum Speichern in savePropItemChanges");
-    return false;
-  }
-  
+      return false;
+    }
+    
     // Finde heraus, welche Items Änderungen haben
     const modifiedItems = items.filter(item => 
       item && (item.displayName !== undefined || item.description !== undefined)
@@ -405,15 +557,16 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
     let existingLines: string[] = [];
     
     try {
-      // Lade die Datei direkt über Fetch
-      const response = await fetch("/resource/propItem.txt.txt");
+      // Lade die Datei direkt über Fetch mit Cache-Busting-Parameter
+      const cacheBuster = Date.now();
+      const response = await fetch(`/resource/propItem.txt.txt?t=${cacheBuster}`);
       if (response.ok) {
         existingContent = await response.text();
         console.log(`Vorhandene propItem.txt.txt geladen, Länge: ${existingContent.length} Zeichen`);
         
         existingLines = existingContent.split(/\r?\n/);
         console.log(`Datei enthält ${existingLines.length} Zeilen`);
-        } else {
+      } else {
         console.warn(`Konnte vorhandene Datei nicht laden, Statuscode: ${response.status}`);
         // Wenn die Datei nicht geladen werden kann, erstellen wir eine neue
         existingLines = [];
@@ -432,9 +585,9 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
     // Update existing lines
     for (let i = 0; i < updatedLines.length; i++) {
       const line = updatedLines[i];
-        const parts = line.split('\t');
+      const parts = line.split('\t');
       
-        if (parts.length >= 2) {
+      if (parts.length >= 2) {
         const id = parts[0];
         
         if (updatedEntries.has(id)) {
@@ -488,6 +641,10 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
           console.log(`Datei erfolgreich mit ANSI-Kodierung gespeichert`);
           // Entferne aus modifizierten Dateien
           modifiedFiles = modifiedFiles.filter(file => file.name !== fileName);
+          
+          // Datei neu laden und State aktualisieren
+          await reloadPropItemFile();
+          
           return true;
         } else {
           console.error(`Fehler beim Speichern mit ANSI-Kodierung:`, result);
@@ -499,6 +656,10 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
       
       if (success) {
         console.log(`Datei erfolgreich gespeichert`);
+        
+        // Datei neu laden und State aktualisieren
+        await reloadPropItemFile();
+        
         return true;
       } else {
         console.error(`Fehler beim Speichern der Datei`);
@@ -511,6 +672,110 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
   } catch (error) {
     console.error(`Allgemeiner Fehler in savePropItemChanges:`, error);
     return false;
+  }
+};
+
+/**
+ * Lädt die PropItem.txt.txt Datei neu und aktualisiert den State in der Anwendung
+ */
+export const reloadPropItemFile = async (): Promise<boolean> => {
+  try {
+    console.log('Lade propItem.txt.txt neu, um State zu aktualisieren...');
+    
+    // Cache-Busting-Parameter hinzufügen, um sicherzustellen, dass wir die neueste Version erhalten
+    const cacheBuster = Date.now();
+    const response = await fetch(`/resource/propItem.txt.txt?t=${cacheBuster}`, {
+      cache: 'no-store', // Vermeide Cache-Nutzung
+      headers: {
+        'Pragma': 'no-cache',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      }
+    });
+    
+    if (!response.ok) {
+      console.error(`Fehler beim Neuladen von propItem.txt.txt: ${response.status} ${response.statusText}`);
+      return false;
+    }
+    
+    const content = await response.text();
+    console.log(`propItem.txt.txt neu geladen, ${content.length} Bytes`);
+    
+    // Analysiere den Inhalt
+    const propItems = parsePropItemContent(content);
+    console.log(`${propItems.length} PropItems extrahiert:`, propItems);
+    
+    // Aktualisiere den Anwendungsstate
+    // Falls ein globaler Event-Bus oder eine zentrale State-Management-Lösung verfügbar ist
+    if ((window as any).dispatchEvent) {
+      const event = new CustomEvent('propItemsUpdated', { detail: propItems });
+      window.dispatchEvent(event);
+      console.log('propItemsUpdated Event ausgelöst');
+    }
+    
+    // Aktualisiere den Zustand über die ItemCache-API, falls vorhanden
+    if ((window as any).ItemCache?.updateItems) {
+      (window as any).ItemCache.updateItems('propItem', propItems);
+      console.log('ItemCache mit PropItems aktualisiert');
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Fehler beim Neuladen der PropItem-Datei:', error);
+    return false;
+  }
+};
+
+/**
+ * Analysiert den Inhalt von propItem.txt.txt und extrahiert die Einträge
+ */
+export const parsePropItemContent = (content: string): any[] => {
+  if (!content) return [];
+  
+  try {
+    const lines = content.split(/\r?\n/);
+    const propItems: Record<string, any> = {};
+    
+    lines.forEach(line => {
+      const parts = line.split('\t');
+      if (parts.length < 2) return;
+      
+      const id = parts[0].trim();
+      const value = parts[1];
+      
+      // PropItem IDs folgen dem Format IDS_PROPITEM_TXT_XXXXXX
+      const match = id.match(/IDS_PROPITEM_TXT_(\d+)/);
+      if (!match) return;
+      
+      const numId = parseInt(match[1], 10);
+      if (isNaN(numId)) return;
+      
+      // Gerade Nummern sind Namen, ungerade sind Beschreibungen
+      const isNameEntry = numId % 2 === 0;
+      const baseId = isNameEntry ? numId : numId - 1;
+      const baseKey = `IDS_PROPITEM_TXT_${baseId.toString().padStart(6, '0')}`;
+      
+      // Erstelle oder aktualisiere das Item
+      if (!propItems[baseKey]) {
+        propItems[baseKey] = {
+          id: baseKey,
+          data: { szName: baseKey }
+        };
+      }
+      
+      // Setze Namen oder Beschreibung
+      if (isNameEntry) {
+        propItems[baseKey].displayName = value;
+        propItems[baseKey].name = value;
+      } else {
+        propItems[baseKey].description = value;
+      }
+    });
+    
+    // Konvertiere das Objekt in ein Array
+    return Object.values(propItems);
+  } catch (error) {
+    console.error('Fehler beim Parsen von PropItem-Inhalt:', error);
+    return [];
   }
 };
 
@@ -560,10 +825,16 @@ export const saveDefineItemChanges = async (items: any[]): Promise<boolean> => {
     });
     
     // Speichere die Änderungen
-    const success = await saveTextFile(content, "defineItem.h", "public/resource/defineItem.h");
+    const fileName = "defineItem.h";
+    const savePath = "public/resource/defineItem.h";
+    const success = await saveTextFile(content, fileName, savePath);
     
     if (success) {
       console.log("defineItem.h erfolgreich gespeichert");
+      
+      // Datei neu laden und State aktualisieren
+      await reloadDefineItemFile();
+      
       return true;
     } else {
       console.error("Fehler beim Speichern von defineItem.h");
@@ -572,6 +843,108 @@ export const saveDefineItemChanges = async (items: any[]): Promise<boolean> => {
   } catch (error) {
     console.error(`Allgemeiner Fehler in saveDefineItemChanges:`, error);
     return false;
+  }
+};
+
+/**
+ * Lädt die defineItem.h Datei neu und aktualisiert den State in der Anwendung
+ */
+export const reloadDefineItemFile = async (): Promise<boolean> => {
+  try {
+    console.log('Lade defineItem.h neu, um State zu aktualisieren...');
+    
+    // Cache-Busting-Parameter hinzufügen, um sicherzustellen, dass wir die neueste Version erhalten
+    const cacheBuster = Date.now();
+    const response = await fetch(`/resource/defineItem.h?t=${cacheBuster}`, {
+      cache: 'no-store', // Vermeide Cache-Nutzung
+      headers: {
+        'Pragma': 'no-cache',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      }
+    });
+    
+    if (!response.ok) {
+      console.error(`Fehler beim Neuladen von defineItem.h: ${response.status} ${response.statusText}`);
+      return false;
+    }
+    
+    const content = await response.text();
+    console.log(`defineItem.h neu geladen, ${content.length} Bytes`);
+    
+    // Analysiere den Inhalt
+    const defineItems = parseDefineItemContent(content);
+    console.log(`${defineItems.length} DefineItems extrahiert`);
+    
+    // Aktualisiere den Anwendungsstate
+    if ((window as any).dispatchEvent) {
+      const event = new CustomEvent('defineItemsUpdated', { detail: defineItems });
+      window.dispatchEvent(event);
+      console.log('defineItemsUpdated Event ausgelöst');
+    }
+    
+    // Aktualisiere den Zustand über die ItemCache-API, falls vorhanden
+    if ((window as any).ItemCache?.updateItems) {
+      (window as any).ItemCache.updateItems('defineItem', defineItems);
+      console.log('ItemCache mit DefineItems aktualisiert');
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Fehler beim Neuladen der DefineItem-Datei:', error);
+    return false;
+  }
+};
+
+/**
+ * Analysiert den Inhalt von defineItem.h und extrahiert die Einträge
+ */
+export const parseDefineItemContent = (content: string): any[] => {
+  if (!content) return [];
+  
+  try {
+    const lines = content.split(/\r?\n/);
+    const items: any[] = [];
+    let currentItem: any = null;
+    
+    lines.forEach(line => {
+      line = line.trim();
+      if (!line) return;
+      
+      if (line.startsWith('#define')) {
+        // Neues Item gefunden
+        if (currentItem) {
+          items.push(currentItem);
+        }
+        
+        const parts = line.split(/\s+/);
+        if (parts.length < 2) return;
+        
+        const id = parts[1];
+        currentItem = {
+          id,
+          effects: []
+        };
+      } else if (currentItem && line.trim().length > 0) {
+        // Effekt für das aktuelle Item
+        const effectParts = line.trim().split(/\s+/);
+        if (effectParts.length >= 2) {
+          currentItem.effects.push({
+            type: effectParts[0],
+            value: effectParts[1]
+          });
+        }
+      }
+    });
+    
+    // Letztes Item hinzufügen, falls vorhanden
+    if (currentItem) {
+      items.push(currentItem);
+    }
+    
+    return items;
+  } catch (error) {
+    console.error('Fehler beim Parsen von DefineItem-Inhalt:', error);
+    return [];
   }
 };
 
@@ -587,7 +960,7 @@ export const saveMdlDynaChanges = async (items: any[]): Promise<boolean> => {
     
     // Finde heraus, welche Items Änderungen haben
     const modifiedItems = items.filter(item => 
-      item && (item.modelFile !== undefined || item.data?.dwItemKind !== undefined)
+      item && (item.modelFile !== undefined || item.data?.dwItemKind !== undefined || item.fields?.mdlDyna?.fileName !== undefined)
     );
     
     if (modifiedItems.length === 0) {
@@ -613,10 +986,16 @@ export const saveMdlDynaChanges = async (items: any[]): Promise<boolean> => {
     });
     
     // Speichere die Änderungen
-    const success = await saveTextFile(content, "mdlDyna.inc", "public/resource/mdlDyna.inc");
+    const fileName = "mdlDyna.inc";
+    const savePath = "public/resource/mdlDyna.inc";
+    const success = await saveTextFile(content, fileName, savePath);
     
     if (success) {
       console.log("mdlDyna.inc erfolgreich gespeichert");
+      
+      // Datei neu laden und State aktualisieren
+      await reloadMdlDynaFile();
+      
       return true;
     } else {
       console.error("Fehler beim Speichern von mdlDyna.inc");
@@ -625,6 +1004,93 @@ export const saveMdlDynaChanges = async (items: any[]): Promise<boolean> => {
   } catch (error) {
     console.error(`Allgemeiner Fehler in saveMdlDynaChanges:`, error);
     return false;
+  }
+};
+
+/**
+ * Lädt die mdlDyna.inc Datei neu und aktualisiert den State in der Anwendung
+ */
+export const reloadMdlDynaFile = async (): Promise<boolean> => {
+  try {
+    console.log('Lade mdlDyna.inc neu, um State zu aktualisieren...');
+    
+    // Cache-Busting-Parameter hinzufügen, um sicherzustellen, dass wir die neueste Version erhalten
+    const cacheBuster = Date.now();
+    const response = await fetch(`/resource/mdlDyna.inc?t=${cacheBuster}`, {
+      cache: 'no-store', // Vermeide Cache-Nutzung
+      headers: {
+        'Pragma': 'no-cache',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      }
+    });
+    
+    if (!response.ok) {
+      console.error(`Fehler beim Neuladen von mdlDyna.inc: ${response.status} ${response.statusText}`);
+      return false;
+    }
+    
+    const content = await response.text();
+    console.log(`mdlDyna.inc neu geladen, ${content.length} Bytes`);
+    
+    // Analysiere den Inhalt
+    const mdlDynaItems = parseMdlDynaContent(content);
+    console.log(`${mdlDynaItems.length} MdlDynaItems extrahiert`);
+    
+    // Aktualisiere den Anwendungsstate
+    if ((window as any).dispatchEvent) {
+      const event = new CustomEvent('mdlDynaItemsUpdated', { detail: mdlDynaItems });
+      window.dispatchEvent(event);
+      console.log('mdlDynaItemsUpdated Event ausgelöst');
+    }
+    
+    // Aktualisiere den Zustand über die ItemCache-API, falls vorhanden
+    if ((window as any).ItemCache?.updateItems) {
+      (window as any).ItemCache.updateItems('mdlDyna', mdlDynaItems);
+      console.log('ItemCache mit MdlDynaItems aktualisiert');
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Fehler beim Neuladen der MdlDyna-Datei:', error);
+    return false;
+  }
+};
+
+/**
+ * Analysiert den Inhalt von mdlDyna.inc und extrahiert die Einträge
+ */
+export const parseMdlDynaContent = (content: string): any[] => {
+  if (!content) return [];
+  
+  try {
+    const lines = content.split(/\r?\n/);
+    const items: any[] = [];
+    
+    lines.forEach(line => {
+      line = line.trim();
+      if (!line || !line.startsWith('#include')) return;
+      
+      // Extrahiere den Dateinamen aus der Include-Anweisung
+      const matches = line.match(/#include\s+"([^"]+)"/);
+      if (!matches || !matches[1]) return;
+      
+      const fileName = matches[1].trim();
+      
+      items.push({
+        id: `model_${items.length + 1}`,
+        modelFile: fileName,
+        fields: {
+          mdlDyna: {
+            fileName: fileName
+          }
+        }
+      });
+    });
+    
+    return items;
+  } catch (error) {
+    console.error('Fehler beim Parsen von MdlDyna-Inhalt:', error);
+    return [];
   }
 };
 

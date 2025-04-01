@@ -30,11 +30,11 @@ function createWindow() {
 
   // Load the app
   if (isDev) {
-    const devServerUrl = process.env.ELECTRON_START_URL || process.env.VITE_DEV_SERVER_URL || 'http://localhost:8081';
+    const devServerUrl = process.env.ELECTRON_START_URL || process.env.VITE_DEV_SERVER_URL || 'http://localhost:8082';
     console.log('Versuche Dev-Server zu laden:', devServerUrl);
     
     // Prüfe, ob der Vite-Server bereits läuft
-    const checkServerRunning = (url, retries = 3) => {
+    const checkServerRunning = (url, retries = 5) => {
       return new Promise((resolve) => {
         const https = url.startsWith('https') ? require('https') : require('http');
         const urlObj = new URL(url);
@@ -45,7 +45,7 @@ function createWindow() {
           hostname: urlObj.hostname,
           port: urlObj.port,
           path: '/',
-          timeout: 1000
+          timeout: 2000
         }, (res) => {
           console.log(`Server antwortet mit Status: ${res.statusCode}`);
           resolve(res.statusCode >= 200 && res.statusCode < 400);
@@ -82,12 +82,12 @@ function createWindow() {
     checkServerRunning(devServerUrl).then(isRunning => {
       if (isRunning) {
         // Server läuft, lade die App
-    mainWindow.loadURL(devServerUrl).catch(err => {
+        mainWindow.loadURL(devServerUrl).catch(err => {
           handleLoadError(err);
         });
       } else {
         // Server läuft nicht, versuche alternative Ports
-        const alternativePorts = [8080, 3000, 5173];
+        const alternativePorts = [8083, 8080, 3000, 5173];
         console.log('Server nicht erreichbar, versuche alternative Ports...');
         
         const tryAlternativePort = (index) => {

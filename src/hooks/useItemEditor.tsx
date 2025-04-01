@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { FileData, LogEntry, ResourceItem } from "../types/fileTypes";
 import { toast } from "sonner";
-import { trackModifiedFile, trackPropItemChanges } from "../utils/file/fileOperations";
+import { trackModifiedFile, trackItemChanges } from "../utils/file/fileOperations";
 import { updatePropItemProperties } from "../utils/file/propItemUtils";
 
 export interface ItemEditorProps {
@@ -21,6 +21,60 @@ const itemCache = new Map<string, ResourceItem>();
 // Flag, ob ein Cache-Update notwendig ist
 let cacheNeedsUpdate = true;
 
+// Global Event-Handler für Item-Updates
+if (typeof window !== 'undefined') {
+  // Handler für PropItem-Updates
+  window.addEventListener('propItemsUpdated', (event: any) => {
+    const items = event.detail || [];
+    
+    console.log('Global ItemEditor: PropItems-Update empfangen', items.length);
+    
+    // ItemCache aktualisieren
+    items.forEach((item: ResourceItem) => {
+      if (item && item.id) {
+        itemCache.set(item.id, item);
+      }
+    });
+    
+    // Cache-Update erzwingen
+    cacheNeedsUpdate = true;
+  });
+  
+  // Handler für DefineItem-Updates
+  window.addEventListener('defineItemsUpdated', (event: any) => {
+    const items = event.detail || [];
+    
+    console.log('Global ItemEditor: DefineItems-Update empfangen', items.length);
+    
+    // ItemCache aktualisieren
+    items.forEach((item: ResourceItem) => {
+      if (item && item.id) {
+        itemCache.set(item.id, item);
+      }
+    });
+    
+    // Cache-Update erzwingen
+    cacheNeedsUpdate = true;
+  });
+  
+  // Handler für MdlDyna-Updates
+  window.addEventListener('mdlDynaItemsUpdated', (event: any) => {
+    const items = event.detail || [];
+    
+    console.log('Global ItemEditor: MdlDynaItems-Update empfangen', items.length);
+    
+    // ItemCache aktualisieren
+    items.forEach((item: ResourceItem) => {
+      if (item && item.id) {
+        itemCache.set(item.id, item);
+      }
+    });
+    
+    // Cache-Update erzwingen
+    cacheNeedsUpdate = true;
+  });
+}
+
 export const useItemEditor = ({
   fileData,
   setFileData,
@@ -39,13 +93,82 @@ export const useItemEditor = ({
   // Cache für schnellen Zugriff auf Items nach ID aktualisieren
   useMemo(() => {
     if (fileData && cacheNeedsUpdate) {
-      itemCache.clear();
-      fileData.items.forEach(item => {
-        itemCache.set(item.id, item);
+      // Vorhandenen Cache beibehalten und nur mit den neuen Items aus fileData aktualisieren
+      fileData.items.forEach((item: ResourceItem) => {
+        if (item && item.id) {
+          itemCache.set(item.id, item);
+        }
       });
       cacheNeedsUpdate = false;
     }
   }, [fileData]);
+  
+  // Event-Listener für Item-Aktualisierungen
+  useEffect(() => {
+    const handleItemUpdate = (event: CustomEvent) => {
+      const type = event.detail?.type;
+      const items = event.detail?.items || [];
+      
+      console.log(`ItemEditor: Ressource-Update vom Typ ${type} empfangen`);
+      
+      // Prüfe, ob das aktuelle Item aktualisiert wurde
+      if (selectedItem) {
+        const updatedItem = items.find((item: ResourceItem) => item.id === selectedItem.id);
+        if (updatedItem) {
+          console.log(`ItemEditor: Update für ausgewähltes Item ${selectedItem.id} gefunden`);
+          
+          // Aktualisiere ausgewähltes Item
+          setSelectedItem({
+            ...selectedItem,
+            ...updatedItem,
+            // Bewahre vorhandene Daten
+            data: {
+              ...selectedItem.data,
+              ...(updatedItem.data || {})
+            }
+          });
+          
+          // Aktualisiere item-State
+          setItem(prevItem => {
+            if (!prevItem) return updatedItem;
+            return {
+              ...prevItem,
+              ...updatedItem,
+              data: {
+                ...prevItem.data,
+                ...(updatedItem.data || {})
+              }
+            };
+          });
+          
+          // Aktualisiere Tabs
+          updateTabItem(updatedItem);
+          
+          // Aktualisiere fileData
+          setFileData((prevData: any) => {
+            if (!prevData || !prevData.items) return prevData;
+            
+            const updatedItems = prevData.items.map((item: ResourceItem) => 
+              item.id === updatedItem.id ? updatedItem : item
+            );
+            
+            return {
+              ...prevData,
+              items: updatedItems
+            };
+          });
+        }
+      }
+    };
+    
+    // Event-Handler registrieren
+    window.addEventListener('resourceUpdated', handleItemUpdate as EventListener);
+    
+    // Event-Handler entfernen
+    return () => {
+      window.removeEventListener('resourceUpdated', handleItemUpdate as EventListener);
+    };
+  }, [selectedItem, setSelectedItem, updateTabItem, setFileData]);
   
   // Funktion zum Aktualisieren eines Items
   const handleUpdateItem = useCallback((updatedItem: ResourceItem) => {
@@ -71,6 +194,11 @@ export const useItemEditor = ({
     // Speichere den Zustand für Undo/Redo
     saveUndoState();
   }, [fileData, selectedItem, setFileData, updateTabItem, saveUndoState]);
+  
+  // Aktualisiere lokalen Item-State wenn sich selectedItem ändert
+  useEffect(() => {
+    setItem(selectedItem);
+  }, [selectedItem]);
   
   // Funktion zum Auswählen eines Items
   const handleSelectItem = useCallback((item: ResourceItem) => {
@@ -112,13 +240,8 @@ export const useItemEditor = ({
     if (!selectedItem || !hasUnsavedChanges) return;
 
     try {
-      // Speichere die Änderungen in der Datei
-      await trackPropItemChanges(
-        selectedItem.id,
-        selectedItem.name,
-        selectedItem.displayName || selectedItem.name,
-        selectedItem.description || ''
-      );
+      // Verwende die neue Funktion zum Speichern aller Dateitypen
+      await trackItemChanges(selectedItem, true);
 
       // Markiere Änderungen als gespeichert
       setHasUnsavedChanges(false);
@@ -129,13 +252,25 @@ export const useItemEditor = ({
           ? { ...tab, modified: false }
           : tab
       ));
+      
+      // Füge Log-Eintrag hinzu
+      setLogEntries(prev => [...prev, {
+        timestamp: Date.now(),
+        itemId: selectedItem.id,
+        itemName: selectedItem.displayName || selectedItem.name,
+        field: 'save',
+        oldValue: '',
+        newValue: 'Gespeichert'
+      }]);
 
+      toast.success(`Änderungen am Item "${selectedItem.displayName || selectedItem.name}" gespeichert`);
       return true;
     } catch (error) {
       console.error("Fehler beim Speichern der Änderungen:", error);
+      toast.error(`Fehler beim Speichern: ${error.message}`);
       throw error;
     }
-  }, [selectedItem, hasUnsavedChanges, setOpenTabs]);
+  }, [selectedItem, hasUnsavedChanges, setOpenTabs, setLogEntries]);
 
   return {
     editMode,

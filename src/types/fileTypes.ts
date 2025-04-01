@@ -1,4 +1,3 @@
-
 export interface ItemData {
   [key: string]: string | number | boolean;
 }
@@ -38,6 +37,20 @@ export interface ResourceItem {
   data: ItemData;
   effects: EffectData[];
   setEffects?: SetEffectData[];
+  modelFile?: string; // Für mdlDyna-Items
+  fields?: {
+    mdlDyna?: {
+      fileName?: string;
+      define?: string;
+      itemIcon?: string;
+    };
+    specItem?: {
+      define?: string;
+      itemIcon?: string;
+      displayName?: string;
+      description?: string;
+    };
+  };
 }
 
 export interface FileData {

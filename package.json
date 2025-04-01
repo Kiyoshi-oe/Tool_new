@@ -6,6 +6,7 @@
   "main": "public/electron.cjs",
   "scripts": {
     "dev": "node electron-start.cjs",
+    "dev:alt": "cross-env VITE_PORT=8083 node electron-start.cjs",
     "electron": "node electron-start.cjs",
     "electron:start": "electron .",
     "vite": "vite",

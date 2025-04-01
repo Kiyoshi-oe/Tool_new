@@ -9,7 +9,8 @@ import apiMiddleware from "./api-middleware.js";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
-    port: 8081,
+    port: parseInt(process.env.VITE_PORT || '8082'),
+    strictPort: true,
     fs: {
       // Allow serving files from one level up to the project root
       allow: ['..']

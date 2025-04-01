@@ -4,6 +4,20 @@
  */
 
 /**
+ * Formatiert einen Item-Icon-Wert für die Spec_Item.txt
+ * Stellt sicher, dass das Format mit dreifachen Anführungszeichen korrekt ist
+ */
+export const formatItemIconValue = (value: string): string => {
+  if (!value) return '""""""';
+  
+  // Entferne vorhandene dreifache Anführungszeichen
+  let cleanValue = value.replace(/^"{3}|"{3}$/g, '');
+  
+  // Gib den Wert mit dreifachen Anführungszeichen zurück
+  return `"""${cleanValue}"""`;
+};
+
+/**
  * Serialisiert für Spec_Item.txt unter Beibehaltung des Formats, aber mit Ersetzung von Namen und Beschreibungen
  * @param fileData Die Dateidaten mit items, die displayName und description enthalten können
  * @param originalContent Der ursprüngliche Textinhalt der Datei
@@ -52,7 +66,15 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
     if (item.displayName !== undefined) console.log(`  Neuer Name: "${item.displayName}"`);
     if (item.description !== undefined) console.log(`  Neue Beschreibung: "${item.description?.substring(0, 30) || ''}..."`);
     if (item.fields?.specItem?.define !== undefined) console.log(`  Neues Define: "${item.fields.specItem.define}"`);
-    if (item.fields?.specItem?.itemIcon !== undefined) console.log(`  Neues Item Icon: "${item.fields.specItem.itemIcon}"`);
+    if (item.fields?.specItem?.itemIcon !== undefined) {
+      console.log(`  Neues Item Icon: "${item.fields.specItem.itemIcon}"`);
+      
+      // Stelle sicher, dass das Item Icon korrekt formatiert ist
+      if (item.fields.specItem.itemIcon && !item.fields.specItem.itemIcon.startsWith('"""')) {
+        item.fields.specItem.itemIcon = formatItemIconValue(item.fields.specItem.itemIcon);
+        console.log(`  Formatiertes Item Icon: "${item.fields.specItem.itemIcon}"`);
+      }
+    }
     if (item.fields?.mdlDyna?.fileName !== undefined) console.log(`  Neuer Dateiname: "${item.fields.mdlDyna.fileName}"`);
   });
   
@@ -73,10 +95,16 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
     const lines = [header.join('\t')];
     fileData.items.forEach(item => {
       if (item) {
+        // Stelle sicher, dass alle Werte korrekt formatiert sind
+        let itemIcon = item.fields?.specItem?.itemIcon || '';
+        if (itemIcon && !itemIcon.startsWith('"""')) {
+          itemIcon = formatItemIconValue(itemIcon);
+        }
+        
         const values = [
           item.id || '',
           item.fields?.specItem?.define || '',
-          item.fields?.specItem?.itemIcon || '',
+          itemIcon,
           item.fields?.specItem?.displayName || item.displayName || '',
           item.fields?.specItem?.description || item.description || '',
           item.effects ? JSON.stringify(item.effects) : ''
@@ -168,7 +196,12 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
       if (item.fields?.specItem?.itemIcon !== undefined) {
         const fieldInfo = fieldMap.get('itemIcon');
         if (fieldInfo) {
-          columns[2] = item.fields.specItem.itemIcon;
+          // Stelle sicher, dass das Item Icon korrekt formatiert ist (mit dreifachen Anführungszeichen)
+          let itemIcon = item.fields.specItem.itemIcon;
+          if (!itemIcon.startsWith('"""')) {
+            itemIcon = formatItemIconValue(itemIcon);
+          }
+          columns[2] = itemIcon;
         }
       }
       

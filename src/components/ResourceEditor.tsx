@@ -1,6 +1,6 @@
-import { useState, useEffect, memo, useMemo, lazy, Suspense, Component, ErrorInfo } from "react";
+import { useState, useEffect, memo, useMemo, lazy, Suspense, Component, ErrorInfo, useRef } from "react";
 import { ResourceItem, EffectData } from "../types/fileTypes";
-import { trackModifiedFile, trackPropItemChanges } from "../utils/file/fileOperations";
+import { trackModifiedFile, trackItemChanges, formatItemIconValue } from "../utils/file/fileOperations";
 import { updateItemIdInDefine } from "../utils/file/defineItemParser";
 import { updateModelFileNameInMdlDyna } from "../utils/file/mdlDynaParser";
 import { toast } from "sonner";
@@ -102,25 +102,59 @@ interface ResourceEditorProps {
 const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceEditorProps) => {
   const [localItem, setLocalItem] = useState<ResourceItem>(item);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
   
   // Aktualisiere localItem wenn sich das übergebene Item ändert
   useEffect(() => {
     setLocalItem(item);
   }, [item]);
 
+  // Registriere Event-Listener für Ressourcen-Updates
+  useEffect(() => {
+    const handleResourceUpdate = (event: CustomEvent) => {
+      const { type, items } = event.detail;
+      
+      // Prüfe, ob die Aktualisierung für dieses Item relevant ist
+      const updatedItem = items.find((item: any) => item.id === localItem.id);
+      if (updatedItem) {
+        console.log(`ResourceEditor: Update für Item ${localItem.id} empfangen`, updatedItem);
+        
+        // Aktualisiere den lokalen State ohne Änderungsstatus zu setzen
+        setLocalItem(prevItem => ({
+          ...prevItem,
+          ...updatedItem,
+          // Bewahre vorhandene Daten, wenn diese nicht im Update enthalten sind
+          data: {
+            ...prevItem.data,
+            ...(updatedItem.data || {})
+          }
+        }));
+        
+        // Benachrichtigung anzeigen
+        toast.success(`Item "${localItem.displayName || localItem.name}" wurde aktualisiert`);
+      }
+    };
+    
+    // Event-Listener hinzufügen
+    const editorElement = editorRef.current;
+    if (editorElement) {
+      editorElement.addEventListener('resourceUpdated', handleResourceUpdate as EventListener);
+    }
+    
+    // Event-Listener entfernen beim Aufräumen
+    return () => {
+      if (editorElement) {
+        editorElement.removeEventListener('resourceUpdated', handleResourceUpdate as EventListener);
+      }
+    };
+  }, [localItem.id, localItem.displayName, localItem.name]);
+
   // Funktion zum Speichern der Änderungen
   const handleSave = async () => {
     try {
       if (hasUnsavedChanges) {
-        // Speichere die Änderungen in propItem.txt.txt
-        if (localItem.displayName !== undefined || localItem.description !== undefined) {
-          await trackPropItemChanges(
-            localItem.id,
-            localItem.name,
-            localItem.displayName || localItem.name,
-            localItem.description || ''
-          );
-        }
+        // Verwende die neue einheitliche Funktion zum Speichern aller Änderungen
+        await trackItemChanges(localItem, true);
         
         // Aktualisiere den Parent-State
         onUpdateItem(localItem);
@@ -129,9 +163,13 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
         setHasUnsavedChanges(false);
         
         console.log("Änderungen erfolgreich gespeichert");
+        
+        // Erfolgsbenachrichtigung
+        toast.success(`Änderungen am Item "${localItem.displayName || localItem.name}" gespeichert`);
       }
     } catch (error) {
       console.error("Fehler beim Speichern der Änderungen:", error);
+      toast.error(`Fehler beim Speichern: ${error.message}`);
     }
   };
 
@@ -150,15 +188,73 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
       if (field === 'displayName') {
         updatedItem = {
           ...localItem,
-          displayName: value as string
+          displayName: value as string,
+          // Aktualisiere auch das entsprechende Feld im fields-Objekt
+          fields: {
+            ...localItem.fields,
+            specItem: {
+              ...localItem.fields?.specItem,
+              displayName: value as string
+            }
+          }
         };
         console.log(`Anzeigename aktualisiert: "${value}"`);
       } else if (field === 'description') {
         updatedItem = {
           ...localItem,
-          description: value as string
+          description: value as string,
+          // Aktualisiere auch das entsprechende Feld im fields-Objekt
+          fields: {
+            ...localItem.fields,
+            specItem: {
+              ...localItem.fields?.specItem,
+              description: value as string
+            }
+          }
         };
         console.log(`Beschreibung aktualisiert`);
+      } else if (field === 'define') {
+        // Spezialfall für Define im Spec_Item und DefineItem
+        updatedItem = {
+          ...localItem,
+          fields: {
+            ...localItem.fields,
+            specItem: {
+              ...localItem.fields?.specItem,
+              define: value as string
+            }
+          }
+        };
+        console.log(`Define aktualisiert: "${value}"`);
+      } else if (field === 'itemIcon') {
+        // Spezialfall für Item Icon, erfordert dreifache Anführungszeichen in der Spec_Item.txt
+        const formattedValue = formatItemIconValue(value as string);
+        updatedItem = {
+          ...localItem,
+          fields: {
+            ...localItem.fields,
+            specItem: {
+              ...localItem.fields?.specItem,
+              itemIcon: formattedValue
+            }
+          }
+        };
+        console.log(`Item Icon aktualisiert: "${formattedValue}"`);
+      } else if (field === 'fileName' || field === 'modelFile') {
+        // Spezialfall für Dateinamen in MdlDyna
+        const fileName = value as string;
+        updatedItem = {
+          ...localItem,
+          modelFile: fileName,
+          fields: {
+            ...localItem.fields,
+            mdlDyna: {
+              ...localItem.fields?.mdlDyna,
+              fileName: fileName
+            }
+          }
+        };
+        console.log(`Modell-Datei aktualisiert: "${fileName}"`);
       } else {
         // Für andere Felder, aktualisiere data
         updatedItem = {
@@ -178,6 +274,11 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
       onUpdateItem(updatedItem);
     };
   }, [localItem, editMode, onUpdateItem]);
+  
+  /**
+   * Verwende die importierte formatItemIconValue-Funktion aus fileOperations.ts
+   * Diese Funktion wurde hier entfernt und durch den Import ersetzt
+   */
   
   // Performance-Optimierung: Memoized handleEffectChange
   const handleEffectChange = useMemo(() => {
@@ -233,7 +334,13 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
   }, [localItem.data]);
   
   return (
-    <div className="flex-1 overflow-y-auto p-4">
+    <div 
+      ref={editorRef} 
+      className="flex-1 overflow-y-auto p-4"
+      data-resource-editor
+      data-resource-type={getResourceType(localItem)}
+      data-item-id={localItem.id}
+    >
       <ErrorBoundary fallback={<FallbackSection title="General" error={new Error("Komponente konnte nicht gerendert werden")} />}>
         <Suspense fallback={<SectionLoader />}>
           <GeneralSection 
@@ -331,6 +438,21 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
     </div>
   );
 });
+
+/**
+ * Bestimmt den Ressourcentyp eines Items basierend auf seinen Eigenschaften
+ */
+const getResourceType = (item: ResourceItem): string => {
+  if (item.id.includes('IDS_PROPITEM_TXT_')) {
+    return 'propItem';
+  } else if (item.id && item.effects && Array.isArray(item.effects)) {
+    return 'defineItem';
+  } else if (item.modelFile || (item.fields?.mdlDyna?.fileName)) {
+    return 'mdlDyna';
+  } else {
+    return 'unknown';
+  }
+};
 
 // Display name für bessere Debug-Erfahrung
 ResourceEditor.displayName = 'ResourceEditor';

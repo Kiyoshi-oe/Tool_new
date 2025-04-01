@@ -234,7 +234,7 @@ const GeneralSection = ({ localItem, editMode, handleDataChange }: GeneralSectio
   const itemId = getItemIdFromDefine(itemDefine);
   
   // Get the model filename from mdlDyna.inc
-  const modelFileName = getModelFileNameFromDefine(itemDefine);
+  const modelFileName = localItem.fields?.mdlDyna?.fileName || getModelFileNameFromDefine(itemDefine);
   
   // Get the model name from mdlDyna.inc
   const modelName = getModelNameFromDefine(itemDefine);
@@ -471,6 +471,13 @@ const GeneralSection = ({ localItem, editMode, handleDataChange }: GeneralSectio
     }
   };
   
+  // Handle model filename change
+  const handleModelFileNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (editMode && approvedFields.has('modelFileName')) {
+      handleDataChange('fileName', e.target.value);
+    }
+  };
+
   return (
     <div className="mb-6">
       <h2 className="text-cyrus-blue text-lg font-semibold mb-2">General</h2>
@@ -604,14 +611,13 @@ const GeneralSection = ({ localItem, editMode, handleDataChange }: GeneralSectio
         <div className="form-field">
           <label htmlFor="file-name" className="form-label">File Name</label>
           <Input
-            ref={fileNameRef}
-            id="file-name"
             type="text"
-            value={modelFileName}
-            onChange={(e) => handleDataChange('modelFileName', e.target.value)}
-            disabled={!editMode}
-            className="form-input"
-            onFocus={() => handleSensitiveFieldFocus('modelFileName', modelFileName)}
+            value={modelFileName || ''}
+            ref={fileNameRef}
+            className={`font-mono ${!editMode || !approvedFields.has('modelFileName') ? 'bg-gray-50 dark:bg-gray-800' : ''}`}
+            readOnly={!editMode || !approvedFields.has('modelFileName')}
+            onFocus={() => handleSensitiveFieldFocus('modelFileName', modelFileName || '')}
+            onChange={handleModelFileNameChange}
           />
           <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
             <AlertTriangle size={14} className="text-yellow-500" />
