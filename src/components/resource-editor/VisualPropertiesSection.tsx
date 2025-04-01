@@ -10,11 +10,13 @@ interface VisualPropertiesSectionProps {
 const VisualPropertiesSection = ({ localItem, editMode, handleDataChange }: VisualPropertiesSectionProps) => {
   // Funktion zum Ändern des Item-Icons mit korrekter Formatierung
   const handleIconChange = (value: string) => {
+    // Formatiere das Icon korrekt, bevor es weitergegeben wird
     const formattedIcon = formatItemIconValue(value);
+    console.log(`Icon wird formatiert: "${value}" -> "${formattedIcon}"`);
     handleDataChange('itemIcon', formattedIcon);
   };
 
-  // Extrahiere den reinen Iconnamen ohne die dreifachen Anführungszeichen
+  // Extrahiere den reinen Iconnamen ohne Anführungszeichen für die Anzeige
   const cleanIconName = localItem.fields?.specItem?.itemIcon?.replace(/^["']{1,3}|["']{1,3}$/g, '') || '';
 
   // Zeige, wie das Icon nach der Speicherung aussehen wird
@@ -38,9 +40,14 @@ const VisualPropertiesSection = ({ localItem, editMode, handleDataChange }: Visu
             Icon file in DDS format (e.g. itm_WeaAxeCurin2.dds)
           </p>
           {cleanIconName && (
-            <p className="mt-1 text-xs text-blue-600">
-              Wird gespeichert als: <code>{formattedIconPreview}</code>
-            </p>
+            <div className="mt-1 text-xs">
+              <p className="text-blue-600">
+                Wird gespeichert als: <code className="bg-gray-100 p-1 rounded">{formattedIconPreview}</code>
+              </p>
+              <p className="text-gray-500 mt-1">
+                <span className="font-semibold">Hinweis:</span> Das Icon wird immer mit dreifachen Anführungszeichen am Anfang und Ende gespeichert.
+              </p>
+            </div>
           )}
         </div>
       </div>

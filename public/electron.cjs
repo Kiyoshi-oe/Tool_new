@@ -82,7 +82,7 @@ function createWindow() {
     checkServerRunning(devServerUrl).then(isRunning => {
       if (isRunning) {
         // Server läuft, lade die App
-        mainWindow.loadURL(devServerUrl).catch(err => {
+    mainWindow.loadURL(devServerUrl).catch(err => {
           handleLoadError(err);
         });
       } else {
@@ -320,8 +320,8 @@ function createWindow() {
       
       // Make sure the directory exists
       if (!fs.existsSync(finalPath)) {
-        fs.mkdirSync(finalPath, { recursive: true });
-        console.log(`Verzeichnis erstellt: ${finalPath}`);
+          fs.mkdirSync(finalPath, { recursive: true });
+          console.log(`Verzeichnis erstellt: ${finalPath}`);
       }
       
       const results = [];
@@ -330,10 +330,10 @@ function createWindow() {
       for (const file of files) {
         try {
           console.log(`Speichere Datei ${file.name} (${file.content ? file.content.length : 0} Zeichen)`);
-          
-          // Spezielle Behandlung für propItem.txt.txt
+      
+      // Spezielle Behandlung für propItem.txt.txt
           let finalContent = file.content;
-          
+        
           if (file.name === 'propItem.txt.txt' && fs.existsSync(path.join(finalPath, file.name))) {
           try {
             console.log(`Bestehende propItem.txt.txt gefunden, führe Inhalte zusammen`);

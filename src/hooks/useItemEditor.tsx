@@ -96,7 +96,7 @@ export const useItemEditor = ({
       // Vorhandenen Cache beibehalten und nur mit den neuen Items aus fileData aktualisieren
       fileData.items.forEach((item: ResourceItem) => {
         if (item && item.id) {
-          itemCache.set(item.id, item);
+        itemCache.set(item.id, item);
         }
       });
       cacheNeedsUpdate = false;
@@ -149,9 +149,9 @@ export const useItemEditor = ({
             if (!prevData || !prevData.items) return prevData;
             
             const updatedItems = prevData.items.map((item: ResourceItem) => 
-              item.id === updatedItem.id ? updatedItem : item
-            );
-            
+        item.id === updatedItem.id ? updatedItem : item
+      );
+      
             return {
               ...prevData,
               items: updatedItems
@@ -180,14 +180,14 @@ export const useItemEditor = ({
     );
 
     // Aktualisiere fileData
-    setFileData({
-      ...fileData,
-      items: updatedItems
-    });
-
+        setFileData({
+          ...fileData,
+          items: updatedItems
+        });
+    
     // Aktualisiere den Tab
     updateTabItem(updatedItem);
-
+    
     // Markiere Änderungen als nicht gespeichert
     setHasUnsavedChanges(true);
 
@@ -202,7 +202,7 @@ export const useItemEditor = ({
   
   // Funktion zum Auswählen eines Items
   const handleSelectItem = useCallback((item: ResourceItem) => {
-    setSelectedItem(item);
+      setSelectedItem(item);
   }, [setSelectedItem]);
   
   // Funktion zum Umschalten des Edit-Modus

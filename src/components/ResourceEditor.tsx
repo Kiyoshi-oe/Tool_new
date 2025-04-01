@@ -228,6 +228,7 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
         console.log(`Define aktualisiert: "${value}"`);
       } else if (field === 'itemIcon') {
         // Spezialfall für Item Icon, erfordert dreifache Anführungszeichen in der Spec_Item.txt
+        // Wir verwenden hier immer die formatItemIconValue-Funktion, um konsistenz zu gewährleisten
         const formattedValue = formatItemIconValue(value as string);
         updatedItem = {
           ...localItem,

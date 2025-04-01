@@ -111,6 +111,8 @@ export const trackModifiedFile = (fileName: string, content: string, metadata?: 
             const contentObj = JSON.parse(content);
             if (contentObj.item && contentObj.item.itemIcon) {
               contentObj.item.itemIcon = formattedIcon;
+            } else if (contentObj.item && contentObj.item.fields && contentObj.item.fields.specItem && contentObj.item.fields.specItem.itemIcon) {
+              contentObj.item.fields.specItem.itemIcon = formattedIcon;
             } else if (contentObj.fields && contentObj.fields.specItem && contentObj.fields.specItem.itemIcon) {
               contentObj.fields.specItem.itemIcon = formattedIcon;
             }
@@ -169,13 +171,26 @@ export const trackModifiedFile = (fileName: string, content: string, metadata?: 
         savePropItemChanges(metadata?.itemsToSave || []);
       } else if (fileType.includes('spec_item.txt')) {
         // Verwende spezialisierte Funktion für Spec_Item.txt mit korrekter Formatierung für Item Icons
+        // Stelle sicher, dass alle Icons in den Items korrekt formatiert sind
+        if (metadata.itemsToSave) {
+          metadata.itemsToSave.forEach((item: any) => {
+            if (item?.fields?.specItem?.itemIcon) {
+              item.fields.specItem.itemIcon = formatItemIconValue(item.fields.specItem.itemIcon);
+              console.log(`Item Icon für ${item.id || 'unbekannt'} formatiert: ${item.fields.specItem.itemIcon}`);
+            }
+          });
+        }
+        
         // Erstelle gesammelten Content mit formatierten Icons
         const specItemContent = serializeWithNameReplacement({
           items: metadata.itemsToSave || [],
           isSpecItemFile: true
         }, content);
         
-        saveTextFile(specItemContent, "Spec_Item.txt", "public/resource/Spec_Item.txt");
+        // Direktes Nachbearbeiten des Inhalts, um sicherzustellen, dass alle Icons korrekt formatiert sind
+        const fixedContent = fixItemIcons(specItemContent);
+        
+        saveTextFile(fixedContent, "Spec_Item.txt", "public/resource/Spec_Item.txt");
       } else if (fileType.includes('defineitem.h')) {
         // Spezielle Behandlung für defineItem.h
         saveDefineItemChanges(metadata?.itemsToSave || []);
@@ -199,14 +214,29 @@ export const trackModifiedFile = (fileName: string, content: string, metadata?: 
 export const formatItemIconValue = (value: string): string => {
   if (!value) return '""""""';
   
-  // Entferne alle Anführungszeichen (einzelne, doppelte oder dreifache)
+  // Suche nach ".dds" im String als zusätzliche Sicherheitsüberprüfung
+  if (!value.toLowerCase().includes('.dds')) {
+    console.warn(`Warnung: formatItemIconValue mit vermutlich ungültigem Icon aufgerufen: "${value}"`);
+  }
+  
+  // Entferne ALLE Anführungszeichen (einzelne, doppelte oder dreifache) am Anfang und Ende
   let cleanValue = value.replace(/^["']{1,3}|["']{1,3}$/g, '');
   
+  // Entferne auch Anführungszeichen innerhalb des Strings, die aus versehentlichen Formatierungen stammen könnten
+  cleanValue = cleanValue.replace(/"{2,}/g, '');
+  
   // Debug-Ausgabe für bessere Nachvollziehbarkeit
-  console.log(`Formatiere Item Icon: "${value}" -> "${cleanValue}" -> """${cleanValue}"""`);
+  console.log(`[formatItemIconValue] Vorher: "${value}" -> Bereinigt: "${cleanValue}" -> Formatiert: """${cleanValue}"""`);
   
   // Gib den Wert mit dreifachen Anführungszeichen zurück
-  return `"""${cleanValue}"""`;
+  const result = `"""${cleanValue}"""`;
+  
+  // Zusätzliche Validierung
+  if (!result.startsWith('"""') || !result.endsWith('"""')) {
+    console.error(`FEHLER: formatItemIconValue hat fehlerhaftes Format erzeugt: "${result}"`);
+  }
+  
+  return result;
 };
 
 // Method to serialize the file data back to text format
@@ -291,12 +321,10 @@ export const trackItemChanges = async (
   try {
     // Sicherstellen, dass Item-Icon korrekt formatiert ist (falls vorhanden)
     if (item.fields?.specItem?.itemIcon) {
-      // Stelle sicher, dass das Icon dreifache Anführungszeichen hat
-      if (!item.fields.specItem.itemIcon.startsWith('"""') || !item.fields.specItem.itemIcon.endsWith('"""')) {
-        // Formatiere das Icon korrekt mit der Hilfsfunktion
-        item.fields.specItem.itemIcon = formatItemIconValue(item.fields.specItem.itemIcon);
-        console.log(`Item Icon korrekt formatiert: ${item.fields.specItem.itemIcon}`);
-      }
+      console.log(`Prüfe Item Icon: "${item.fields.specItem.itemIcon}"`);
+      // Formatiere das Icon unabhängig vom aktuellen Format immer neu
+      item.fields.specItem.itemIcon = formatItemIconValue(item.fields.specItem.itemIcon);
+      console.log(`Item Icon formatiert: "${item.fields.specItem.itemIcon}"`);
     }
     
     // Tracking für propItem.txt.txt (für Namen und Beschreibungen)
@@ -436,8 +464,8 @@ export const trackPropItemChanges = async (
 // Prüfen Sie die Konsistenz zwischen Spec_Item.txt und propItem.txt.txt
 export const ensurePropItemConsistency = (fileData: any): void => {
   try {
-    console.log("Konsistenzprüfung für Item-Namen und Beschreibungen gestartet");
-    
+  console.log("Konsistenzprüfung für Item-Namen und Beschreibungen gestartet");
+  
   if (!fileData || !fileData.items || !Array.isArray(fileData.items)) {
       console.warn("Ungültige fileData für ensurePropItemConsistency");
       return;
@@ -502,12 +530,12 @@ export const ensurePropItemConsistency = (fileData: any): void => {
 export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
   try {
     console.log(`savePropItemChanges aufgerufen mit ${items?.length || 0} Items`);
-    
+  
     if (!items || !Array.isArray(items) || items.length === 0) {
       console.warn("Keine Items zum Speichern in savePropItemChanges");
-      return false;
-    }
-    
+    return false;
+  }
+  
     // Finde heraus, welche Items Änderungen haben
     const modifiedItems = items.filter(item => 
       item && (item.displayName !== undefined || item.description !== undefined)
@@ -566,7 +594,7 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
         
         existingLines = existingContent.split(/\r?\n/);
         console.log(`Datei enthält ${existingLines.length} Zeilen`);
-      } else {
+        } else {
         console.warn(`Konnte vorhandene Datei nicht laden, Statuscode: ${response.status}`);
         // Wenn die Datei nicht geladen werden kann, erstellen wir eine neue
         existingLines = [];
@@ -585,9 +613,9 @@ export const savePropItemChanges = async (items: any[]): Promise<boolean> => {
     // Update existing lines
     for (let i = 0; i < updatedLines.length; i++) {
       const line = updatedLines[i];
-      const parts = line.split('\t');
+        const parts = line.split('\t');
       
-      if (parts.length >= 2) {
+        if (parts.length >= 2) {
         const id = parts[0];
         
         if (updatedEntries.has(id)) {
@@ -997,7 +1025,7 @@ export const saveMdlDynaChanges = async (items: any[]): Promise<boolean> => {
       await reloadMdlDynaFile();
       
       return true;
-    } else {
+          } else {
       console.error("Fehler beim Speichern von mdlDyna.inc");
       return false;
     }
@@ -1039,7 +1067,7 @@ export const reloadMdlDynaFile = async (): Promise<boolean> => {
     // Aktualisiere den Anwendungsstate
     if ((window as any).dispatchEvent) {
       const event = new CustomEvent('mdlDynaItemsUpdated', { detail: mdlDynaItems });
-      window.dispatchEvent(event);
+          window.dispatchEvent(event);
       console.log('mdlDynaItemsUpdated Event ausgelöst');
     }
     
@@ -1088,7 +1116,7 @@ export const parseMdlDynaContent = (content: string): any[] => {
     });
     
     return items;
-  } catch (error) {
+      } catch (error) {
     console.error('Fehler beim Parsen von MdlDyna-Inhalt:', error);
     return [];
   }
@@ -1171,7 +1199,7 @@ export const saveWithFileSystemAPI = async (content: string, fileName: string): 
     
     console.log(`Datei erfolgreich über FileSystem API gespeichert: ${fileName}`);
     return true;
-      } catch (error) {
+        } catch (error) {
     console.error('Fehler beim Speichern über FileSystem API:', error);
     return false;
   }
@@ -1212,17 +1240,19 @@ export const saveTextFile = async (
     console.log(`Speichere Datei ${fileName} mit ${content?.length || 0} Zeichen`);
     
     if (!content || !fileName) {
-      console.error('saveTextFile error: Ungültiger Inhalt oder Dateiname');
+      console.warn(`Ungültige Parameter für saveTextFile: content=${!!content}, fileName=${fileName}`);
       return false;
     }
-
+    
+    // Spezieller Fall für Spec_Item.txt: Stelle sicher, dass Icons korrekt formatiert sind
+    if (fileName.includes('Spec_Item.txt')) {
+      console.log("Überprüfe Spec_Item.txt auf korrekte Icon-Formatierung vor dem Speichern...");
+      content = fixItemIcons(content);
+    }
+    
     // Bestimme den Speicherpfad
-    let savePath = '';
-    if (customPath) {
-      savePath = customPath;
-    } else {
-      // Standard-Pfad für Ressourcendateien
-      // Entferne den führenden Slash, um doppelte Pfade zu vermeiden
+    let savePath = customPath;
+    if (!savePath) {
       savePath = `public/resource/${fileName}`;
     }
     
@@ -1584,6 +1614,17 @@ export const saveAllModifiedFiles = async (context: any): Promise<string[]> => {
           });
         }
         
+        // Format item icons correctly in the items before serialization
+        if (isSpecItemFile) {
+          // Ensure all icons have proper formatting
+          parsedContent.items.forEach((item: any) => {
+            if (item?.fields?.specItem?.itemIcon) {
+              item.fields.specItem.itemIcon = formatItemIconValue(item.fields.specItem.itemIcon);
+              console.log(`Item Icon für ${item.id || 'unbekannt'} formatiert: ${item.fields.specItem.itemIcon}`);
+            }
+          });
+        }
+        
         // Verwende die entsprechende Serialisierungsfunktion
         if (isSpecItemFile) {
           // Hole den originalContent aus den parsedContent-Daten
@@ -1594,6 +1635,9 @@ export const saveAllModifiedFiles = async (context: any): Promise<string[]> => {
           
           content = serializeWithNameReplacement(parsedContent, originalContent);
           console.log(`Serialisierten Inhalt für ${fileInfo.name} erstellt (${content.length} Bytes)`);
+          
+          // Additional direct processing of the content to ensure proper icon formatting
+          content = fixItemIcons(content);
         } else if (isPropItemFile) {
           content = serializePropItems(parsedContent.items || []);
           console.log(`Serialisierten Inhalt für ${fileInfo.name} erstellt (${content.length} Bytes)`);
@@ -1627,6 +1671,46 @@ export const saveAllModifiedFiles = async (context: any): Promise<string[]> => {
   
   return results;
 };
+
+/**
+ * Hilfsfunktion, um Item Icons in der serialisierten Datei direkt zu korrigieren
+ * Diese Funktion durchsucht den Text nach DDS-Dateien und stellt sicher, dass sie 
+ * mit dreifachen Anführungszeichen umschlossen sind.
+ */
+function fixItemIcons(content: string): string {
+  // Nur fortfahren, wenn Inhalt vorhanden ist
+  if (!content) return content;
+  
+  console.log('Prüfe auf korrekte Icon-Formatierung...');
+  
+  // Teile den Inhalt in Zeilen auf
+  const lines = content.split(/\r?\n/);
+  const updatedLines = lines.map(line => {
+    // Teile die Zeile in Tabs
+    const parts = line.split('\t');
+    
+    // Suche nach einem Teil, der wie ein Icon aussieht (enthält .dds)
+    if (parts.length > 2) {
+      for (let i = 0; i < parts.length; i++) {
+        // Prüfe, ob der Teil ein Icon sein könnte
+        if (parts[i] && parts[i].includes('.dds') && !parts[i].startsWith('"""') && !parts[i].endsWith('"""')) {
+          // Entferne alle vorhandenen Anführungszeichen
+          const cleanIcon = parts[i].replace(/^["']{0,3}|["']{0,3}$/g, '');
+          
+          // Formatiere das Icon korrekt mit dreifachen Anführungszeichen
+          parts[i] = `"""${cleanIcon}"""`;
+          console.log(`Icon in Zeile korrigiert: ${cleanIcon} -> ${parts[i]}`);
+        }
+      }
+    }
+    
+    // Setze die Zeile wieder zusammen
+    return parts.join('\t');
+  });
+  
+  // Setze den Inhalt wieder zusammen
+  return updatedLines.join('\n');
+}
 
 // Hilfsfunktion, um den Dateinamen aus einem Pfad zu extrahieren
 const getFilename = (filePath: string): string => {

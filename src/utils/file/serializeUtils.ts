@@ -3,19 +3,8 @@
  * Diese stellen sicher, dass Änderungen an Namen und Beschreibungen in den Dateien landen
  */
 
-/**
- * Formatiert einen Item-Icon-Wert für die Spec_Item.txt
- * Stellt sicher, dass das Format mit dreifachen Anführungszeichen korrekt ist
- */
-export const formatItemIconValue = (value: string): string => {
-  if (!value) return '""""""';
-  
-  // Entferne vorhandene dreifache Anführungszeichen
-  let cleanValue = value.replace(/^"{3}|"{3}$/g, '');
-  
-  // Gib den Wert mit dreifachen Anführungszeichen zurück
-  return `"""${cleanValue}"""`;
-};
+// Importiere die formatItemIconValue-Funktion
+import { formatItemIconValue } from './fileOperations';
 
 /**
  * Serialisiert für Spec_Item.txt unter Beibehaltung des Formats, aber mit Ersetzung von Namen und Beschreibungen
@@ -43,7 +32,8 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
       item.description !== undefined ||
       item.fields?.specItem?.define !== undefined ||
       item.fields?.specItem?.itemIcon !== undefined ||
-      item.fields?.mdlDyna?.fileName !== undefined
+      item.fields?.mdlDyna?.fileName !== undefined ||
+      (item.effects && item.effects.length > 0) // Hinzugefügt: Prüfe auf Effekte
     )
   );
   
@@ -76,6 +66,14 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
       }
     }
     if (item.fields?.mdlDyna?.fileName !== undefined) console.log(`  Neuer Dateiname: "${item.fields.mdlDyna.fileName}"`);
+    
+    // Hinzugefügt: Debug-Ausgabe für Effekte
+    if (item.effects && item.effects.length > 0) {
+      console.log(`  Item hat ${item.effects.length} Effekte`);
+      item.effects.forEach((effect: any, index: number) => {
+        console.log(`    Effect ${index + 1}: ${effect.type} = ${effect.value}`);
+      });
+    }
   });
   
   // Wenn kein gültiger originalContent vorhanden ist, erstelle einen neuen
@@ -158,6 +156,17 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
             if (i === 3) fieldMap.set('displayName', { lineIndex: index, startPos: currentPos, endPos: currentPos + col.length, line });
             if (i === 4) fieldMap.set('description', { lineIndex: index, startPos: currentPos, endPos: currentPos + col.length, line });
             
+            // Hinzugefügt: Speichere die Positionen für dwDestParam1-6 und nAdjParamVal1-6
+            // Annahme: dwDestParam1 ist die 82. Spalte (0-indexiert) in der Spec_item.txt
+            if (i >= 82 && i <= 87) {
+              fieldMap.set(`dwDestParam${i - 81}`, { lineIndex: index, startPos: currentPos, endPos: currentPos + col.length, line });
+            }
+            
+            // Annahme: nAdjParamVal1 ist die 88. Spalte (0-indexiert) in der Spec_item.txt
+            if (i >= 88 && i <= 93) {
+              fieldMap.set(`nAdjParamVal${i - 87}`, { lineIndex: index, startPos: currentPos, endPos: currentPos + col.length, line });
+            }
+            
             currentPos += col.length + 1; // +1 für den Tab
           });
         }
@@ -197,11 +206,14 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
         const fieldInfo = fieldMap.get('itemIcon');
         if (fieldInfo) {
           // Stelle sicher, dass das Item Icon korrekt formatiert ist (mit dreifachen Anführungszeichen)
-          let itemIcon = item.fields.specItem.itemIcon;
-          if (!itemIcon.startsWith('"""')) {
-            itemIcon = formatItemIconValue(itemIcon);
-          }
-          columns[2] = itemIcon;
+          // Direkter Aufruf von formatItemIconValue
+          const iconValue = item.fields.specItem.itemIcon;
+          // Entferne alle Anführungszeichen und füge dreifache hinzu
+          const cleanIcon = iconValue.replace(/^["']{0,3}|["']{0,3}$/g, '');
+          const formattedIcon = `"""${cleanIcon}"""`;
+          
+          columns[2] = formattedIcon;
+          console.log(`Item Icon formatiert: "${columns[2]}"`);
         }
       }
       
@@ -216,6 +228,36 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
         const fieldInfo = fieldMap.get('description');
         if (fieldInfo) {
           columns[4] = item.fields?.specItem?.description || item.description;
+        }
+      }
+      
+      // Hinzugefügt: Aktualisiere dwDestParam1-6 und nAdjParamVal1-6 basierend auf den Effekten
+      if (item.effects && Array.isArray(item.effects)) {
+        // Durchlaufe alle möglichen Effekte (maximal 6)
+        for (let i = 0; i < 6; i++) {
+          const effect = item.effects[i];
+          
+          // dwDestParam Feld aktualisieren (1-indexiert, daher i+1)
+          const dwDestParamField = `dwDestParam${i+1}`;
+          const destParamFieldInfo = fieldMap.get(dwDestParamField);
+          if (destParamFieldInfo) {
+            // Position in columns berechnen: dwDestParam1 ist in column 82 (0-indexiert)
+            const columnIndex = 82 + i;
+            // Wenn es einen Effekt gibt, setze den Typ, sonst setze auf "_NONE" oder leer
+            columns[columnIndex] = effect && effect.type !== '-' ? effect.type : "_NONE";
+            console.log(`Aktualisiere ${dwDestParamField} für Item ${itemId} auf ${columns[columnIndex]}`);
+          }
+          
+          // nAdjParamVal Feld aktualisieren
+          const nAdjParamValField = `nAdjParamVal${i+1}`;
+          const adjParamFieldInfo = fieldMap.get(nAdjParamValField);
+          if (adjParamFieldInfo) {
+            // Position in columns berechnen: nAdjParamVal1 ist in column 88 (0-indexiert)
+            const columnIndex = 88 + i;
+            // Wenn es einen Effekt gibt, setze den Wert, sonst setze auf "=" oder leer
+            columns[columnIndex] = effect && effect.type !== '-' ? effect.value : "=";
+            console.log(`Aktualisiere ${nAdjParamValField} für Item ${itemId} auf ${columns[columnIndex]}`);
+          }
         }
       }
       
