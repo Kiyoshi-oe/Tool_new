@@ -358,7 +358,7 @@ const Index = () => {
         />
         
         <div className="flex flex-1 overflow-hidden">
-          {currentTab !== "Collecting" && (
+          {currentTab !== "Collecting" && currentTab !== "NPC" && (
             <Sidebar 
               items={getFilteredItems(fileData, currentTab)} 
               onSelectItem={(item) => handleSelectItem(item, showSettings, showToDoPanel)}

@@ -26,19 +26,27 @@ const NPCTab = ({ editMode, availableItems = [] }: NPCTabProps) => {
     setIsLoading(true);
     try {
       // NPCs aus den Ressourcendateien laden
-      // In der realen Implementierung würde dies die Dateien aus den angegebenen Ressourcen laden
       const loadedNPCs = await getNPCsFromPropMover();
-      setNpcs(loadedNPCs);
       
-      // Setze den ersten NPC als ausgewählt, wenn welche geladen wurden
       if (loadedNPCs.length > 0) {
+        setNpcs(loadedNPCs);
+        // Setze den ersten NPC als ausgewählt
         setSelectedNPC(loadedNPCs[0]);
+        toast.success(`${loadedNPCs.length} NPCs erfolgreich geladen`);
+      } else {
+        // Nur wenn keine NPCs gefunden wurden, verwende die Demo-NPCs
+        console.warn('Keine NPCs in den Ressourcendateien gefunden, verwende Demo-NPCs');
+        const demoNPCs = generateDemoNPCs();
+        setNpcs(demoNPCs);
+        
+        if (demoNPCs.length > 0) {
+          setSelectedNPC(demoNPCs[0]);
+        }
+        toast.info('Demo-NPCs geladen, da keine echten NPCs gefunden wurden');
       }
-      
-      toast.success(`${loadedNPCs.length} NPCs erfolgreich geladen`);
     } catch (error) {
       console.error('Fehler beim Laden der NPCs:', error);
-      toast.error('Fehler beim Laden der NPCs');
+      toast.error('Fehler beim Laden der NPCs, verwende Demo-NPCs');
       
       // Fallback für Entwicklungszwecke: Demo-NPCs
       const demoNPCs = generateDemoNPCs();
