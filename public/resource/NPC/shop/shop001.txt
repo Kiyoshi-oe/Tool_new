@@ -1,0 +1,26 @@
+// Shop Definition for NPC_ID: 3 (Merchant)
+// ShopID: shop001
+// Format: ItemID,Price,Count,Position
+
+// ItemID: ID of the item from propItem.txt
+// Price: Cost of the item in gold
+// Count: Number of items available (-1 for unlimited)
+// Position: Position in the shop list
+
+// Consumables
+101,50,100,0      // Health Potion
+102,80,100,1      // Mana Potion
+103,120,50,2      // Resurrection Scroll
+104,30,100,3      // Bread
+
+// Equipment
+201,500,5,4       // Bronze Sword
+202,450,5,5       // Wooden Shield
+203,600,3,6       // Leather Armor
+204,200,8,7       // Leather Boots
+
+// Materials
+301,25,100,8      // Iron Ore
+302,35,80,9       // Herb
+303,15,200,10     // Wood
+304,60,50,11      // Leather 

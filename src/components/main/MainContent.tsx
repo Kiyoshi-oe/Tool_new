@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { toast } from "sonner";
 import { RefreshCcw, Undo2, Redo2 } from "lucide-react";
 import { useState } from "react";
+import NPCTab from "../NPCTab";
 
 interface MainContentProps {
   showSettings: boolean;
@@ -136,6 +137,17 @@ const MainContent = ({
     />;
   }
   
+  if (currentTab === "NPC") {
+    return (
+      <div className="flex-1 overflow-hidden">
+        <NPCTab 
+          editMode={editMode} 
+          availableItems={fileData?.items} 
+        />
+      </div>
+    );
+  }
+  
   if (selectedItem) {
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -199,8 +211,8 @@ const MainContent = ({
       {onShowChangelog && (
         <Button
           onClick={onShowChangelog}
-          className="bg-gray-700 hover:bg-gray-600 text-white mt-4"
-          variant="outline"
+          className="mt-4 bg-transparent text-gray-400 hover:text-white"
+          variant="ghost"
         >
           <Clock className="mr-2 h-4 w-4" />
           <span>View Changelog</span>

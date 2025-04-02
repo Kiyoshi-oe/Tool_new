@@ -1,0 +1,10 @@
+// propMover.txt.txt - Text definitions for NPCs
+// This file contains the display names and descriptions for NPCs
+
+// Format:
+// NPC_ID	DisplayName	Description
+
+1	Dorfbewohner	Ein gewöhnlicher Bewohner des Dorfes. Er kann dir Informationen über die Umgebung geben.
+2	Dorffrau	Eine freundliche Dorfbewohnerin, die sich um alltägliche Aufgaben kümmert.
+3	Händler Götz	Ein erfahrener Händler, der verschiedene Waren zum Verkauf anbietet.
+4	Stadtwache	Eine Wache, die für die Sicherheit in der Stadt sorgt und Auskünfte erteilen kann. 

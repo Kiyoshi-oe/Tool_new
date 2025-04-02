@@ -1,0 +1,99 @@
+// Dialog file for NPC_ID: 1 (Village Citizen)
+// Format: DialogID;Text;ResponseOptions
+
+BEGIN_DIALOG dialog001
+    TEXT="Willkommen in unserem Dorf! Was führt dich hierher, Reisender?"
+    RESPONSE_OPTIONS={
+        OPTION={
+            ID="dialog001_resp1"
+            TEXT="Ich bin nur auf der Durchreise. Kannst du mir etwas über dieses Dorf erzählen?"
+            NEXT_DIALOG="dialog001_1"
+        }
+        OPTION={
+            ID="dialog001_resp2"
+            TEXT="Ich suche nach Arbeit. Gibt es hier irgendwelche Aufgaben zu erledigen?"
+            NEXT_DIALOG="dialog001_2"
+        }
+        OPTION={
+            ID="dialog001_resp3"
+            TEXT="Auf Wiedersehen."
+            NEXT_DIALOG=""
+        }
+    }
+END_DIALOG
+
+BEGIN_DIALOG dialog001_1
+    TEXT="Unser Dorf ist klein, aber wir haben alles, was wir brauchen. Im Norden findest du den Marktplatz, wo Händler Götz seine Waren anbietet. Im Osten liegt der Wald, aber sei vorsichtig dort - es gibt gefährliche Kreaturen."
+    RESPONSE_OPTIONS={
+        OPTION={
+            ID="dialog001_1_resp1"
+            TEXT="Vielen Dank für die Information."
+            NEXT_DIALOG="dialog001_end"
+        }
+        OPTION={
+            ID="dialog001_1_resp2"
+            TEXT="Gibt es sonst noch etwas, das ich wissen sollte?"
+            NEXT_DIALOG="dialog001_3"
+        }
+    }
+END_DIALOG
+
+BEGIN_DIALOG dialog001_2
+    TEXT="Tatsächlich könnte ich Hilfe gebrauchen. Wölfe aus dem Wald haben in letzter Zeit unsere Hühner gestohlen. Würdest du einige von ihnen jagen, um uns zu helfen?"
+    RESPONSE_OPTIONS={
+        OPTION={
+            ID="dialog001_2_resp1"
+            TEXT="Natürlich, ich werde dir helfen."
+            NEXT_DIALOG="dialog001_4"
+        }
+        OPTION={
+            ID="dialog001_2_resp2"
+            TEXT="Das klingt zu gefährlich für mich. Vielleicht ein andermal."
+            NEXT_DIALOG="dialog001_5"
+        }
+    }
+END_DIALOG
+
+BEGIN_DIALOG dialog001_3
+    TEXT="Hmm, lass mich nachdenken... Ah ja, du solltest mit unserem Dorfältesten sprechen. Er weiß viel über die Geschichte unserer Region und könnte dir interessante Geschichten erzählen."
+    RESPONSE_OPTIONS={
+        OPTION={
+            ID="dialog001_3_resp1"
+            TEXT="Danke für den Tipp. Ich werde ihn aufsuchen."
+            NEXT_DIALOG="dialog001_end"
+        }
+    }
+END_DIALOG
+
+BEGIN_DIALOG dialog001_4
+    TEXT="Vielen Dank! Jage 5 Wölfe im östlichen Wald und bringe mir ihre Schwänze als Beweis. Ich werde dich dafür belohnen."
+    RESPONSE_OPTIONS={
+        OPTION={
+            ID="dialog001_4_resp1"
+            TEXT="Ich mache mich sofort auf den Weg."
+            NEXT_DIALOG="dialog001_end"
+        }
+    }
+END_DIALOG
+
+BEGIN_DIALOG dialog001_5
+    TEXT="Das verstehe ich. Der Wald kann gefährlich sein. Wenn du deine Meinung änderst, findest du mich hier."
+    RESPONSE_OPTIONS={
+        OPTION={
+            ID="dialog001_5_resp1"
+            TEXT="Ich komme später darauf zurück."
+            NEXT_DIALOG="dialog001_end"
+        }
+    }
+END_DIALOG
+
+BEGIN_DIALOG dialog001_end
+    TEXT="Viel Glück auf deinen Reisen, Abenteurer!"
+    RESPONSE_OPTIONS={
+        OPTION={
+            ID="dialog001_end_resp1"
+            TEXT="Auf Wiedersehen."
+            NEXT_DIALOG=""
+        }
+    }
+END_DIALOG 
