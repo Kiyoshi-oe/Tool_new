@@ -33,7 +33,9 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
       item.fields?.specItem?.define !== undefined ||
       item.fields?.specItem?.itemIcon !== undefined ||
       item.fields?.mdlDyna?.fileName !== undefined ||
-      (item.effects && item.effects.length > 0) // Hinzugefügt: Prüfe auf Effekte
+      (item.effects && item.effects.length > 0) || // Hinzugefügt: Prüfe auf Effekte
+      item.data?.dwAbilityMin !== undefined ||     // Hinzugefügt: Prüfe auf Min Ability
+      item.data?.dwAbilityMax !== undefined        // Hinzugefügt: Prüfe auf Max Ability
     )
   );
   
@@ -66,6 +68,10 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
       }
     }
     if (item.fields?.mdlDyna?.fileName !== undefined) console.log(`  Neuer Dateiname: "${item.fields.mdlDyna.fileName}"`);
+    
+    // Hinzugefügt: Debug-Ausgabe für Min/Max Ability Werte
+    if (item.data?.dwAbilityMin !== undefined) console.log(`  Min Ability: "${item.data.dwAbilityMin}"`);
+    if (item.data?.dwAbilityMax !== undefined) console.log(`  Max Ability: "${item.data.dwAbilityMax}"`);
     
     // Hinzugefügt: Debug-Ausgabe für Effekte
     if (item.effects && item.effects.length > 0) {
@@ -229,6 +235,29 @@ export const serializeWithNameReplacement = (fileData: any, originalContent: str
         if (fieldInfo) {
           columns[4] = item.fields?.specItem?.description || item.description;
         }
+      }
+      
+      // Hinzugefügt: Prüfe und aktualisiere dwAbilityMin und dwAbilityMax, wenn vorhanden
+      if (item.data?.dwAbilityMin !== undefined) {
+        console.log(`Aktualisiere dwAbilityMin für Item ${itemId}: ${item.data.dwAbilityMin}`);
+        // Annahme: dwAbilityMin ist die 20. Spalte (0-indexiert) in der Spec_item.txt
+        const dwAbilityMinIndex = 20;
+        // Stelle sicher, dass die Spalten-Arrays groß genug sind
+        while (columns.length <= dwAbilityMinIndex) {
+          columns.push("=");
+        }
+        columns[dwAbilityMinIndex] = item.data.dwAbilityMin === "" ? "=" : String(item.data.dwAbilityMin);
+      }
+      
+      if (item.data?.dwAbilityMax !== undefined) {
+        console.log(`Aktualisiere dwAbilityMax für Item ${itemId}: ${item.data.dwAbilityMax}`);
+        // Annahme: dwAbilityMax ist die 21. Spalte (0-indexiert) in der Spec_item.txt
+        const dwAbilityMaxIndex = 21;
+        // Stelle sicher, dass die Spalten-Arrays groß genug sind
+        while (columns.length <= dwAbilityMaxIndex) {
+          columns.push("=");
+        }
+        columns[dwAbilityMaxIndex] = item.data.dwAbilityMax === "" ? "=" : String(item.data.dwAbilityMax);
       }
       
       // Hinzugefügt: Aktualisiere dwDestParam1-6 und nAdjParamVal1-6 basierend auf den Effekten

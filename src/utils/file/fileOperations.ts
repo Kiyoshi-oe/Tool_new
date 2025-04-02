@@ -1,4 +1,5 @@
 import { serializeWithNameReplacement, serializePropItems } from './serializeUtils';
+import { ResourceItem } from "../../types/fileTypes";
 
 // Track modified files that need to be saved
 export let modifiedFiles: { name: string; content: string; lastModified?: number; metadata?: any }[] = [];
@@ -307,136 +308,94 @@ export const serializePropItemData = (items: any[]): string => {
 };
 
 /**
- * Verfolgt Änderungen an einem Item in allen relevanten Dateien
- * (propItem.txt.txt, Spec_Item.txt, defineItem.h, mdlDyna.inc)
+ * Trackt Änderungen an einem Item für alle relevanten Dateien (Spec_Item.txt, etc.)
+ * und speichert diese direkt, wenn forceWrite true ist
  */
-export const trackItemChanges = async (
-  item: any,
-  saveImmediately: boolean = false
-): Promise<void> => {
-  if (!item) return;
-
-  console.log(`Tracking item changes for ${item.id || 'unknown item'} with effects:`, item.effects);
-  
+export const trackItemChanges = async (item: ResourceItem, forceWrite: boolean = false): Promise<void> => {
   try {
-    // Sicherstellen, dass Item-Icon korrekt formatiert ist (falls vorhanden)
+    console.log(`Trackiere Änderungen für Item ${item.id || 'unbekannt'}`);
+    console.log(`Effekte: `, item.effects);
+    
+    // Stelle sicher, dass wir ein gültiges Item haben
+    if (!item || !item.id) {
+      console.error("Ungültiges Item für trackItemChanges:", item);
+      return;
+    }
+
+    // Stelle sicher, dass das Item Icon korrekt formatiert ist
     if (item.fields?.specItem?.itemIcon) {
-      console.log(`Prüfe Item Icon: "${item.fields.specItem.itemIcon}"`);
-      // Formatiere das Icon unabhängig vom aktuellen Format immer neu
       item.fields.specItem.itemIcon = formatItemIconValue(item.fields.specItem.itemIcon);
-      console.log(`Item Icon formatiert: "${item.fields.specItem.itemIcon}"`);
     }
     
-    // Stelle sicher, dass die Effekte korrekt formatiert sind
-    if (item.effects && Array.isArray(item.effects)) {
-      console.log(`Verarbeite ${item.effects.length} Effekte für Item ${item.id}`);
-      
-      // Bereinige die Effekte
+    // Verarbeite die Effekte des Items
+    if (item.effects) {
+      // Filtere Effekte ohne gültige Typen 
       const cleanedEffects = item.effects
-        .filter(effect => effect && effect.type && effect.type !== '-' && effect.type !== '_NONE')
+        .filter(effect => effect.type && effect.type !== '-' && effect.type !== '_NONE')
         .map(effect => ({
           type: effect.type,
-          value: effect.value || '0'
+          value: effect.value || '0' // Stelle sicher, dass der Wert mindestens '0' ist
         }));
       
-      // Aktualisiere das Item mit den bereinigten Effekten
+      // Setze die bereinigten Effekte zurück
       item.effects = cleanedEffects;
       
-      console.log(`Bereinigte Effekte:`, cleanedEffects);
+      console.log(`Bereinigte Effekte für ${item.id}:`, cleanedEffects);
     }
+
+    // Sammle alle Items, die gespeichert werden sollen
+    const itemsToSave: ResourceItem[] = [item];
     
-    // Tracking für propItem.txt.txt (für Namen und Beschreibungen)
-    if (item.displayName !== undefined || item.description !== undefined) {
-      await trackModifiedFile("propItem.txt.txt", JSON.stringify({
-        type: "propItemUpdate",
-        item: {
-          id: item.id,
-          displayName: item.displayName,
-          description: item.description
+    // Überprüfe, ob wir zusätzliche Metadaten haben
+    const metadata = {
+      shouldSaveImmediately: forceWrite,
+      saveSpecItemImmediate: forceWrite,
+      savePropItemImmediate: forceWrite,
+      saveDefineItemImmediate: forceWrite,
+      saveMdlDynaImmediate: forceWrite,
+      itemsToSave
+    };
+
+    // Aktualisiere die Spec_Item.txt
+    if (item.id) {
+      // Tracke die Änderungen in der Spec_Item.txt
+      await trackModifiedFile(
+        "Spec_Item.txt", 
+        "", // Wir übergeben keinen Inhalt, da wir die Änderungen über serializeWithNameReplacement machen
+        {
+          ...metadata,
+          saveSpecItemImmediate: true // Immer sofort speichern, da wir den gesamten Inhalt ersetzen
         }
-      }), {
-        itemId: item.id,
-        displayName: item.displayName,
-        description: item.description
-      });
+      );
     }
-    
-    // Tracking für Spec_Item.txt (für Item Icons und andere Felder)
-    if (item.fields?.specItem) {
-      await trackModifiedFile("Spec_Item.txt", JSON.stringify({
-        type: "specItemUpdate",
-        item: {
-          id: item.id,
-          define: item.fields.specItem.define,
-          itemIcon: item.fields.specItem.itemIcon, // Bereits korrekt formatiert
-          displayName: item.displayName,
-          description: item.description
+
+    // Wenn das Item einen displayName hat, aktualisiere auch die propItem.txt.txt
+    if (item.displayName || item.description) {
+      // Tracke die Änderungen in der propItem.txt.txt
+      await trackModifiedFile(
+        "propItem.txt.txt", 
+        "", // Wir übergeben keinen Inhalt, da wir die Namen in savePropItemChanges aktualisieren
+        {
+          ...metadata,
+          savePropItemImmediate: true // Immer sofort speichern
         }
-      }), {
-        itemId: item.id,
-        specItem: {
-          define: item.fields.specItem.define,
-          itemIcon: item.fields.specItem.itemIcon,
-        }
-      });
+      );
     }
-    
-    // Tracking für defineItem.h
-    if (item.fields?.defineItem || (item.effects && Array.isArray(item.effects))) {
-      await trackModifiedFile("defineItem.h", JSON.stringify({
-        type: "defineItemUpdate",
-        item: {
-          id: item.id,
-          define: item.fields?.specItem?.define || item.name,
-          effects: item.effects
-        }
-      }), {
-        itemId: item.id,
-        defineItem: {
-          define: item.fields?.specItem?.define || item.name,
-          effects: item.effects
-        }
-      });
-    }
-    
-    // Tracking für mdlDyna.inc
+
+    // Wenn das Item ein mdlDyna-Feld hat, aktualisiere auch die mdlDyna.inc
     if (item.fields?.mdlDyna?.fileName || item.modelFile) {
-      const fileName = item.fields?.mdlDyna?.fileName || item.modelFile;
-      await trackModifiedFile("mdlDyna.inc", JSON.stringify({
-        type: "mdlDynaUpdate",
-        item: {
-          id: item.id,
-          fileName: fileName,
-          define: item.fields?.specItem?.define || item.name
+      // Tracke die Änderungen in der mdlDyna.inc
+      await trackModifiedFile(
+        "mdlDyna.inc", 
+        "", // Wir übergeben keinen Inhalt, da wir die Modelldaten in saveMdlDynaChanges aktualisieren
+        {
+          ...metadata,
+          saveMdlDynaImmediate: true // Immer sofort speichern
         }
-      }), {
-        itemId: item.id,
-        mdlDyna: {
-          fileName: fileName,
-          define: item.fields?.specItem?.define || item.name
-        }
-      });
+      );
     }
-    
-    if (saveImmediately) {
-      // Alle Änderungen sofort speichern
-      await saveAllModifiedFiles({});
-      
-      // Event auslösen für Aktualisierung der UI
-      if (typeof window !== 'undefined') {
-        const event = new CustomEvent('resourceUpdated', {
-          detail: {
-            type: 'itemSaved',
-            items: [item]
-          }
-        });
-        window.dispatchEvent(event);
-      }
-    }
-    
-    console.log(`Item changes tracked successfully for ${item.id}`);
   } catch (error) {
-    console.error(`Error tracking item changes for ${item.id}:`, error);
+    console.error("Fehler beim Tracken der Item-Änderungen:", error);
     throw error;
   }
 };

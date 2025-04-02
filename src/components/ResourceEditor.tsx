@@ -69,7 +69,6 @@ const SetEffectsSection = lazy(() => robustImport("./resource-editor/SetEffectsS
 const PropertiesSection = lazy(() => robustImport("./resource-editor/PropertiesSection", "Properties"));
 const WeaponPropertiesSection = lazy(() => robustImport("./resource-editor/WeaponPropertiesSection", "Weapon Properties"));
 const ResistancesSection = lazy(() => robustImport("./resource-editor/ResistancesSection", "Resistances"));
-const VisualPropertiesSection = lazy(() => robustImport("./resource-editor/VisualPropertiesSection", "Visual Properties"));
 const SoundEffectsSection = lazy(() => robustImport("./resource-editor/SoundEffectsSection", "Sound Effects"));
 
 // Fallback für Fehler in Sektionen
@@ -331,18 +330,16 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
   
   // Performance-Optimierung: Memoized visageWeight
   // Analysiere das Item, um zu entscheiden, welche Sektionen gezeigt werden sollen
-  const { showWeaponProps, showResistances, showVisualProps, showSoundEffects } = useMemo(() => {
+  const { showWeaponProps, showResistances, showSoundEffects } = useMemo(() => {
     // Analyse des Items für bedingte Rendering-Entscheidungen
     const itemType = localItem.data?.dwItemKind;
     const isWeapon = itemType === "IK_WEAPON";
     const hasResistances = localItem.data?.dwAddAbility || localItem.data?.dwAbnormalKind;
-    const hasVisuals = localItem.data?.dwItemKind1 || localItem.data?.dwItemLV;
     const hasSounds = localItem.data?.dwSndAttack1 || localItem.data?.dwSndAttack2;
     
     return {
       showWeaponProps: isWeapon,
       showResistances: hasResistances,
-      showVisualProps: hasVisuals,
       showSoundEffects: hasSounds
     };
   }, [localItem.data]);
@@ -370,7 +367,7 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
           <StatsSection 
             localItem={localItem}
             editMode={editMode}
-            handleEffectChange={handleEffectChange}
+            handleDataChange={handleDataChange}
           />
         </Suspense>
       </ErrorBoundary>
@@ -421,34 +418,19 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
         </ErrorBoundary>
       )}
       
-      {showVisualProps && (
-        <ErrorBoundary fallback={<FallbackSection title="Visual Properties" error={new Error("Komponente konnte nicht gerendert werden")} />}>
-          <Suspense fallback={<SectionLoader />}>
-            <VisualPropertiesSection 
-              localItem={localItem}
-              editMode={editMode}
-              handleDataChange={handleDataChange}
-            />
-          </Suspense>
-        </ErrorBoundary>
-      )}
-      
       <ErrorBoundary fallback={<FallbackSection title="Set Effects" error={new Error("Komponente konnte nicht gerendert werden")} />}>
         <Suspense fallback={<SectionLoader />}>
           <SetEffectsSection item={localItem} />
         </Suspense>
       </ErrorBoundary>
       
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-cyrus-blue">
-          {localItem.displayName || localItem.name || 'Unnamed Item'}
-        </h1>
-        {hasUnsavedChanges && (
+      {hasUnsavedChanges && (
+        <div className="flex justify-end mt-4">
           <Button onClick={handleSave} className="bg-cyrus-blue hover:bg-cyrus-blue-dark">
             Save Changes
           </Button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 });
