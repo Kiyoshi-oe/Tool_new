@@ -220,8 +220,8 @@ function parseTabSeparated(lines: string[]): FileData {
     if (!line) continue;
     
     const values = line.split('\t');
-    if (values.length < 1) continue;
-    
+        if (values.length < 1) continue;
+        
     const data: ItemData = {};
     
     // Weise Werte den Header-Spalten zu

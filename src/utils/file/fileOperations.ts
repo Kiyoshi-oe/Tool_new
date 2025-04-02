@@ -327,6 +327,24 @@ export const trackItemChanges = async (
       console.log(`Item Icon formatiert: "${item.fields.specItem.itemIcon}"`);
     }
     
+    // Stelle sicher, dass die Effekte korrekt formatiert sind
+    if (item.effects && Array.isArray(item.effects)) {
+      console.log(`Verarbeite ${item.effects.length} Effekte für Item ${item.id}`);
+      
+      // Bereinige die Effekte
+      const cleanedEffects = item.effects
+        .filter(effect => effect && effect.type && effect.type !== '-' && effect.type !== '_NONE')
+        .map(effect => ({
+          type: effect.type,
+          value: effect.value || '0'
+        }));
+      
+      // Aktualisiere das Item mit den bereinigten Effekten
+      item.effects = cleanedEffects;
+      
+      console.log(`Bereinigte Effekte:`, cleanedEffects);
+    }
+    
     // Tracking für propItem.txt.txt (für Namen und Beschreibungen)
     if (item.displayName !== undefined || item.description !== undefined) {
       await trackModifiedFile("propItem.txt.txt", JSON.stringify({

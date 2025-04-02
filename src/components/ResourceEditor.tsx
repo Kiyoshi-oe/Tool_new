@@ -298,24 +298,24 @@ const ResourceEditor = memo(({ item, onUpdateItem, editMode = false }: ResourceE
         };
       }
       
-      // Track effects modification in spec_item.txt and defineItem.h
-      // Die Effekte werden sowohl in der spec_item.txt als auch in defineItem.h gespeichert
-      
       // Setze alle Effekte, die '-' als Typ haben, zurück und entferne leere Effekte
       const cleanedEffects = updatedEffects
-        .filter(effect => effect.type && effect.type !== '-' && effect.type !== '_NONE');
+        .filter(effect => effect.type && effect.type !== '-' && effect.type !== '_NONE')
+        .map(effect => ({
+          type: effect.type,
+          value: effect.value || '0' // Stelle sicher, dass der Wert mindestens '0' ist
+        }));
       
       // Aktualisiere das Item im lokalen State
       const updatedItem = {
         ...localItem,
-        effects: updatedEffects
+        effects: cleanedEffects
       };
       
       // Aktualisiere lokales State
       setLocalItem(updatedItem);
       
       // Direkt Änderungen speichern in spec_item.txt durch Aufruf von trackItemChanges
-      // Dies stellt sicher, dass die Effekte sofort in der Datei aktualisiert werden
       trackItemChanges(updatedItem, true).catch(error => {
         console.error("Fehler beim Speichern der Effekte:", error);
         toast.error(`Fehler beim Speichern der Effekte: ${error.message}`);
