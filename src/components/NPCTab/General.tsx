@@ -13,12 +13,12 @@ interface GeneralProps {
 const General = ({ npc, onUpdateNPC, editMode }: GeneralProps) => {
   const [localNPC, setLocalNPC] = useState<NPCItem>(npc);
 
-  // Aktualisieren des lokalen Zustands, wenn sich der NPC ändert
+  // Update local state when NPC changes
   useEffect(() => {
     setLocalNPC(npc);
   }, [npc]);
 
-  // Funktion zum Aktualisieren von NPC-Eigenschaften
+  // Function to update NPC properties
   const handleChange = (field: string, value: string | number) => {
     if (!editMode) return;
 
@@ -49,11 +49,11 @@ const General = ({ npc, onUpdateNPC, editMode }: GeneralProps) => {
 
   return (
     <div className="space-y-4 p-4 bg-cyrus-dark-lighter rounded-md border border-cyrus-dark-lightest">
-      <h2 className="text-xl font-semibold text-white mb-4">Allgemeine Informationen</h2>
+      <h2 className="text-xl font-semibold text-white mb-4">General Information</h2>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="npc-id" className="text-white">NPC-ID</Label>
+          <Label htmlFor="npc-id" className="text-white">NPC ID</Label>
           <Input
             id="npc-id"
             value={localNPC.id}
@@ -64,7 +64,7 @@ const General = ({ npc, onUpdateNPC, editMode }: GeneralProps) => {
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="npc-name" className="text-white">Interner Name</Label>
+          <Label htmlFor="npc-name" className="text-white">Internal Name</Label>
           <Input
             id="npc-name"
             value={localNPC.name}
@@ -75,7 +75,7 @@ const General = ({ npc, onUpdateNPC, editMode }: GeneralProps) => {
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="npc-display-name" className="text-white">Anzeigename (im Spiel)</Label>
+          <Label htmlFor="npc-display-name" className="text-white">Display Name (in game)</Label>
           <Input
             id="npc-display-name"
             value={localNPC.displayName}
@@ -86,7 +86,7 @@ const General = ({ npc, onUpdateNPC, editMode }: GeneralProps) => {
         </div>
         
         <div className="space-y-2">
-          <Label htmlFor="npc-type" className="text-white">NPC-Typ</Label>
+          <Label htmlFor="npc-type" className="text-white">NPC Type</Label>
           <Input
             id="npc-type"
             value={localNPC.type}
@@ -98,7 +98,7 @@ const General = ({ npc, onUpdateNPC, editMode }: GeneralProps) => {
       </div>
       
       <div className="space-y-2">
-        <Label htmlFor="npc-description" className="text-white">Beschreibung</Label>
+        <Label htmlFor="npc-description" className="text-white">Description</Label>
         <Textarea
           id="npc-description"
           value={localNPC.description || ''}

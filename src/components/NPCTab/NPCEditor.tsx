@@ -12,15 +12,15 @@ interface NPCEditorProps {
   npc: NPCItem;
   onUpdateNPC: (updatedNPC: NPCItem, field?: string, oldValue?: any) => void;
   editMode: boolean;
-  availableItems?: ResourceItem[]; // Für den Shop
+  availableItems?: ResourceItem[]; // For the shop
 }
 
 const NPCEditor = ({ npc, onUpdateNPC, editMode, availableItems = [] }: NPCEditorProps) => {
   const [activeTab, setActiveTab] = useState('general');
 
-  // Aktualisiere die aktive Tab-Auswahl wenn ein neuer NPC ausgewählt wird
+  // Update the active tab when a new NPC is selected
   useEffect(() => {
-    // Zurück zum ersten Tab, wenn ein neuer NPC geladen wird
+    // Back to the first tab when a new NPC is loaded
     setActiveTab('general');
   }, [npc.id]);
 
@@ -40,7 +40,7 @@ const NPCEditor = ({ npc, onUpdateNPC, editMode, availableItems = [] }: NPCEdito
                   ? 'text-white border-b-2 border-[#007BFF] data-[state=active]:bg-transparent data-[state=active]:text-white' 
                   : 'text-gray-400 hover:text-white hover:bg-opacity-20 hover:bg-[#007BFF]'}`}
             >
-              Allgemein
+              General
             </TabsTrigger>
             <TabsTrigger
               value="attributes"
@@ -49,7 +49,7 @@ const NPCEditor = ({ npc, onUpdateNPC, editMode, availableItems = [] }: NPCEdito
                   ? 'text-white border-b-2 border-[#007BFF] data-[state=active]:bg-transparent data-[state=active]:text-white' 
                   : 'text-gray-400 hover:text-white hover:bg-opacity-20 hover:bg-[#007BFF]'}`}
             >
-              Attribute
+              Attributes
             </TabsTrigger>
             <TabsTrigger
               value="dialogues"
@@ -58,7 +58,7 @@ const NPCEditor = ({ npc, onUpdateNPC, editMode, availableItems = [] }: NPCEdito
                   ? 'text-white border-b-2 border-[#007BFF] data-[state=active]:bg-transparent data-[state=active]:text-white' 
                   : 'text-gray-400 hover:text-white hover:bg-opacity-20 hover:bg-[#007BFF]'}`}
             >
-              Dialoge
+              Dialogues
             </TabsTrigger>
             <TabsTrigger
               value="appearance"
@@ -67,7 +67,7 @@ const NPCEditor = ({ npc, onUpdateNPC, editMode, availableItems = [] }: NPCEdito
                   ? 'text-white border-b-2 border-[#007BFF] data-[state=active]:bg-transparent data-[state=active]:text-white' 
                   : 'text-gray-400 hover:text-white hover:bg-opacity-20 hover:bg-[#007BFF]'}`}
             >
-              Erscheinungsbild
+              Appearance
             </TabsTrigger>
             <TabsTrigger
               value="shop"

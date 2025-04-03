@@ -12,22 +12,22 @@ interface AttributesProps {
 }
 
 const behaviorTypes = [
-  { value: 'passive', label: 'Passiv' },
-  { value: 'aggressive', label: 'Aggressiv' },
-  { value: 'merchant', label: 'Händler' },
-  { value: 'quest', label: 'Questgeber' },
-  { value: 'guard', label: 'Wache' },
+  { value: 'passive', label: 'Passive' },
+  { value: 'aggressive', label: 'Aggressive' },
+  { value: 'merchant', label: 'Merchant' },
+  { value: 'quest', label: 'Quest Giver' },
+  { value: 'guard', label: 'Guard' },
 ];
 
 const Attributes = ({ npc, onUpdateNPC, editMode }: AttributesProps) => {
   const [localNPC, setLocalNPC] = useState<NPCItem>(npc);
 
-  // Aktualisieren des lokalen Zustands, wenn sich der NPC ändert
+  // Update local state when NPC changes
   useEffect(() => {
     setLocalNPC(npc);
   }, [npc]);
 
-  // Funktion zum Aktualisieren von Position
+  // Function to update position
   const handlePositionChange = (field: keyof NPCItem['position'], value: number) => {
     if (!editMode) return;
 
@@ -39,18 +39,18 @@ const Attributes = ({ npc, onUpdateNPC, editMode }: AttributesProps) => {
     onUpdateNPC(updatedNPC, `position.${field}`, oldValue);
   };
 
-  // Funktion zum Aktualisieren von Stats
+  // Function to update stats
   const handleStatsChange = (field: string, value: number) => {
     if (!editMode) return;
 
     const oldValue = localNPC.stats?.[field];
-    // Stelle sicher, dass hp immer vorhanden ist, selbst wenn es bisher nicht definiert war
+    // Make sure hp is always present, even if it wasn't defined before
     const updatedStats = { 
-      ...(localNPC.stats || { hp: 0 }), // Default hp: 0 wenn stats noch nicht existiert
+      ...(localNPC.stats || { hp: 0 }), // Default hp: 0 if stats doesn't exist yet
       [field]: value 
     };
     
-    // Stelle sicher, dass hp immer gesetzt ist, falls es noch nicht existiert
+    // Make sure hp is always set if it doesn't exist yet
     if (field !== 'hp' && !updatedStats.hp) {
       updatedStats.hp = 0;
     }
@@ -61,7 +61,7 @@ const Attributes = ({ npc, onUpdateNPC, editMode }: AttributesProps) => {
     onUpdateNPC(updatedNPC, `stats.${field}`, oldValue);
   };
 
-  // Funktion zum Aktualisieren von einfachen Eigenschaften
+  // Function to update simple properties
   const handleChange = (field: string, value: string | number) => {
     if (!editMode) return;
 
@@ -74,14 +74,14 @@ const Attributes = ({ npc, onUpdateNPC, editMode }: AttributesProps) => {
 
   return (
     <div className="space-y-6 p-4 bg-cyrus-dark-lighter rounded-md border border-cyrus-dark-lightest">
-      <h2 className="text-xl font-semibold text-white mb-4">Attribute & Statistiken</h2>
+      <h2 className="text-xl font-semibold text-white mb-4">Attributes & Statistics</h2>
       
       <Card className="bg-cyrus-dark border-cyrus-dark-lightest">
         <CardContent className="pt-6">
-          <h3 className="text-md font-semibold text-white mb-3">Position & Orientierung</h3>
+          <h3 className="text-md font-semibold text-white mb-3">Position & Orientation</h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="position-x" className="text-white">X-Position</Label>
+              <Label htmlFor="position-x" className="text-white">X Position</Label>
               <Input
                 id="position-x"
                 type="number"
@@ -93,7 +93,7 @@ const Attributes = ({ npc, onUpdateNPC, editMode }: AttributesProps) => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="position-y" className="text-white">Y-Position</Label>
+              <Label htmlFor="position-y" className="text-white">Y Position</Label>
               <Input
                 id="position-y"
                 type="number"
@@ -105,7 +105,7 @@ const Attributes = ({ npc, onUpdateNPC, editMode }: AttributesProps) => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="position-z" className="text-white">Z-Position</Label>
+              <Label htmlFor="position-z" className="text-white">Z Position</Label>
               <Input
                 id="position-z"
                 type="number"
@@ -117,7 +117,7 @@ const Attributes = ({ npc, onUpdateNPC, editMode }: AttributesProps) => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="position-angle" className="text-white">Blickwinkel</Label>
+              <Label htmlFor="position-angle" className="text-white">Viewing Angle</Label>
               <Input
                 id="position-angle"
                 type="number"
@@ -133,7 +133,7 @@ const Attributes = ({ npc, onUpdateNPC, editMode }: AttributesProps) => {
       
       <Card className="bg-cyrus-dark border-cyrus-dark-lightest">
         <CardContent className="pt-6">
-          <h3 className="text-md font-semibold text-white mb-3">NPC-Eigenschaften</h3>
+          <h3 className="text-md font-semibold text-white mb-3">NPC Properties</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="npc-level" className="text-white">Level</Label>
@@ -148,14 +148,14 @@ const Attributes = ({ npc, onUpdateNPC, editMode }: AttributesProps) => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="npc-behavior" className="text-white">Verhaltenstyp</Label>
+              <Label htmlFor="npc-behavior" className="text-white">Behavior Type</Label>
               <Select 
                 value={localNPC.behavior || 'passive'} 
                 onValueChange={(value) => handleChange('behavior', value)}
                 disabled={!editMode}
               >
                 <SelectTrigger className="bg-cyrus-dark text-white border-cyrus-dark-lightest">
-                  <SelectValue placeholder="Verhaltenstyp wählen" />
+                  <SelectValue placeholder="Select behavior type" />
                 </SelectTrigger>
                 <SelectContent className="bg-cyrus-dark text-white border-cyrus-dark-lightest">
                   {behaviorTypes.map((type) => (
@@ -172,7 +172,7 @@ const Attributes = ({ npc, onUpdateNPC, editMode }: AttributesProps) => {
       
       <Card className="bg-cyrus-dark border-cyrus-dark-lightest">
         <CardContent className="pt-6">
-          <h3 className="text-md font-semibold text-white mb-3">Kampfstatistiken</h3>
+          <h3 className="text-md font-semibold text-white mb-3">Combat Statistics</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
             <div className="space-y-2">
               <Label htmlFor="npc-hp" className="text-white">HP</Label>

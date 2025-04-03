@@ -14,7 +14,7 @@ const NPCList = ({ npcs, selectedNPC, onSelectNPC }: NPCListProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<string>('all');
 
-  // Filtern der NPCs basierend auf Suchbegriff und Filter
+  // Filter NPCs based on search term and filter
   const filteredNPCs = useMemo(() => {
     if (!npcs || npcs.length === 0) return [];
     
@@ -28,7 +28,7 @@ const NPCList = ({ npcs, selectedNPC, onSelectNPC }: NPCListProps) => {
     });
   }, [npcs, searchTerm, filter]);
 
-  // NPC-Typen für den Filter extrahieren
+  // Extract NPC types for the filter
   const npcTypes = useMemo(() => {
     if (!npcs || npcs.length === 0) return [];
     
@@ -48,7 +48,7 @@ const NPCList = ({ npcs, selectedNPC, onSelectNPC }: NPCListProps) => {
         <div className="relative mb-2">
           <Input 
             type="text"
-            placeholder="NPC suchen..."
+            placeholder="Search NPCs..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-8 w-full bg-cyrus-dark-lighter text-white border-cyrus-dark-lightest"
@@ -62,7 +62,7 @@ const NPCList = ({ npcs, selectedNPC, onSelectNPC }: NPCListProps) => {
             className="text-xs px-2 py-1 h-6"
             onClick={() => setFilter('all')}
           >
-            Alle
+            All
           </Button>
           
           {npcTypes.map(type => (
@@ -96,7 +96,7 @@ const NPCList = ({ npcs, selectedNPC, onSelectNPC }: NPCListProps) => {
           </ul>
         ) : (
           <div className="p-4 text-center text-gray-400">
-            {npcs.length === 0 ? "Keine NPCs geladen" : "Keine NPCs gefunden"}
+            {npcs.length === 0 ? "No NPCs loaded" : "No NPCs found"}
           </div>
         )}
       </div>

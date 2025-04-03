@@ -112,7 +112,7 @@ const Index = () => {
   
   const handleSaveFile = async () => {
     if (!fileData || !selectedItem) {
-      toast.warning("Kein Element ausgewählt zum Speichern");
+      toast.warning("No item selected for saving");
       return;
     }
     
@@ -121,7 +121,7 @@ const Index = () => {
       const itemToSave = fileData.items.find(item => item.id === selectedItem.id);
       
       if (!itemToSave) {
-        toast.error("Ausgewähltes Element konnte nicht gefunden werden");
+        toast.error("Selected item could not be found");
         return;
       }
       
@@ -131,7 +131,7 @@ const Index = () => {
       await ensurePropItemConsistency(fileData);
       
       // Speichere das ausgewählte propItem
-      console.log(`Speichere das aktuell ausgewählte Item (${selectedItem.id})`);
+      console.log(`Saving the currently selected item (${selectedItem.id})`);
       await savePropItemChanges([itemToSave]);
       
       // Speichere die Haupt-Datei
@@ -139,7 +139,7 @@ const Index = () => {
       const savedToResource = await saveTextFile(content, "Spec_Item.txt");
       
       // Speichere alle modifizierten Dateien
-      const allSaved = await saveAllModifiedFiles();
+      const allSaved = await saveAllModifiedFiles([]);
       
       // Log-Eintrag erstellen
       if (settings.enableLogging) {
@@ -149,25 +149,25 @@ const Index = () => {
           itemName: selectedItem.name,
           field: "file-save",
           oldValue: "",
-          newValue: `Item gespeichert um ${new Date().toLocaleTimeString()}`
+          newValue: `Item saved at ${new Date().toLocaleTimeString()}`
         };
         setLogEntries(prev => [newLogEntry, ...prev]);
       }
       
       if (savedToResource && allSaved) {
-        toast.success(`Element "${selectedItem.name}" erfolgreich gespeichert`);
+        toast.success(`Element "${selectedItem.name}" successfully saved`);
       } else {
-        toast.warning(`Element "${selectedItem.name}" gespeichert, aber es gab Probleme beim Speichern einiger Dateien`);
+        toast.warning(`Element "${selectedItem.name}" saved, but there were problems saving some files`);
       }
     } catch (error) {
-      toast.error("Fehler beim Speichern des Elements");
-      console.error("Fehler beim Speichern des Elements:", error);
+      toast.error("Error saving the element");
+      console.error("Error saving the element:", error);
     }
   };
   
   const handleSaveAllFiles = async () => {
     if (!fileData || openTabs.length === 0) {
-      toast.warning("Keine Tabs offen zum Speichern");
+      toast.warning("No tabs open for saving");
       return;
     }
     
@@ -180,7 +180,7 @@ const Index = () => {
       await ensurePropItemConsistency(fileData);
       
       // Speichere die propItems aus allen Tabs
-      console.log(`Speichere ${tabItems.length} Items aus offenen Tabs`);
+      console.log(`Saving ${tabItems.length} items from open tabs`);
       await savePropItemChanges(tabItems);
       
       // Speichere die Haupt-Datei
@@ -188,29 +188,29 @@ const Index = () => {
       const savedToResource = await saveTextFile(content, "Spec_Item.txt");
       
       // Speichere alle modifizierten Dateien
-      const allSaved = await saveAllModifiedFiles();
+      const allSaved = await saveAllModifiedFiles([]);
       
       // Log-Eintrag erstellen
       if (settings.enableLogging) {
         const newLogEntry: LogEntry = {
           timestamp: Date.now(),
           itemId: "tabs-save-all",
-          itemName: "Alle Tabs",
+          itemName: "All Tabs",
           field: "file-save-all",
           oldValue: "",
-          newValue: `${tabItems.length} Tabs gespeichert um ${new Date().toLocaleTimeString()}`
+          newValue: `${tabItems.length} tabs saved at ${new Date().toLocaleTimeString()}`
         };
         setLogEntries(prev => [newLogEntry, ...prev]);
       }
       
       if (savedToResource && allSaved) {
-        toast.success(`Alle ${tabItems.length} Tabs erfolgreich gespeichert`);
+        toast.success(`All ${tabItems.length} tabs successfully saved`);
       } else {
-        toast.warning(`Tabs gespeichert, aber es gab Probleme beim Speichern einiger Dateien`);
+        toast.warning(`Tabs saved, but there were problems saving some files`);
       }
     } catch (error) {
-      toast.error("Fehler beim Speichern der Tabs");
-      console.error("Fehler beim Speichern aller Tabs:", error);
+      toast.error("Error saving the tabs");
+      console.error("Error saving all tabs:", error);
     }
   };
   
@@ -275,7 +275,7 @@ const Index = () => {
   const handleRestoreVersion = (itemId: string, timestamp: number) => {
     if (itemId === 'CLEAR_ALL_LOGS') {
       setLogEntries([]);
-      toast.success('Alle Logs wurden gelöscht');
+      toast.success('All logs were deleted');
       return;
     }
     

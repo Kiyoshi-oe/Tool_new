@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 
 interface NPCTabProps {
   editMode: boolean;
-  availableItems?: ResourceItem[]; // Für den Shop
+  availableItems?: ResourceItem[]; // For the shop
 }
 
 const NPCTab = ({ editMode, availableItems = [] }: NPCTabProps) => {
@@ -16,39 +16,39 @@ const NPCTab = ({ editMode, availableItems = [] }: NPCTabProps) => {
   const [selectedNPC, setSelectedNPC] = useState<NPCItem | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Laden der NPCs beim ersten Öffnen der Tab
+  // Loading NPCs when the tab is first opened
   useEffect(() => {
     loadNPCs();
   }, []);
 
-  // Funktion zum Laden der NPCs
+  // Function to load NPCs
   const loadNPCs = async () => {
     setIsLoading(true);
     try {
-      // NPCs aus den Ressourcendateien laden
+      // Load NPCs from resource files
       const loadedNPCs = await getNPCsFromPropMover();
       
       if (loadedNPCs.length > 0) {
         setNpcs(loadedNPCs);
-        // Setze den ersten NPC als ausgewählt
+        // Set the first NPC as selected
         setSelectedNPC(loadedNPCs[0]);
-        toast.success(`${loadedNPCs.length} NPCs erfolgreich geladen`);
+        toast.success(`${loadedNPCs.length} NPCs successfully loaded`);
       } else {
-        // Nur wenn keine NPCs gefunden wurden, verwende die Demo-NPCs
-        console.warn('Keine NPCs in den Ressourcendateien gefunden, verwende Demo-NPCs');
+        // Only if no NPCs were found, use the demo NPCs
+        console.warn('No NPCs found in resource files, using demo NPCs');
         const demoNPCs = generateDemoNPCs();
         setNpcs(demoNPCs);
         
         if (demoNPCs.length > 0) {
           setSelectedNPC(demoNPCs[0]);
         }
-        toast.info('Demo-NPCs geladen, da keine echten NPCs gefunden wurden');
+        toast.info('Demo NPCs loaded as no real NPCs were found');
       }
     } catch (error) {
-      console.error('Fehler beim Laden der NPCs:', error);
-      toast.error('Fehler beim Laden der NPCs, verwende Demo-NPCs');
+      console.error('Error loading NPCs:', error);
+      toast.error('Error loading NPCs, using demo NPCs');
       
-      // Fallback für Entwicklungszwecke: Demo-NPCs
+      // Fallback for development purposes: Demo NPCs
       const demoNPCs = generateDemoNPCs();
       setNpcs(demoNPCs);
       
@@ -60,11 +60,11 @@ const NPCTab = ({ editMode, availableItems = [] }: NPCTabProps) => {
     }
   };
 
-  // Aktualisieren eines NPCs
+  // Update an NPC
   const handleUpdateNPC = (updatedNPC: NPCItem, field?: string, oldValue?: any) => {
     if (!editMode) return;
     
-    // Aktualisiere den NPC in der Liste
+    // Update the NPC in the list
     const updatedNPCs = npcs.map(npc => 
       npc.id === updatedNPC.id ? updatedNPC : npc
     );
@@ -72,18 +72,18 @@ const NPCTab = ({ editMode, availableItems = [] }: NPCTabProps) => {
     setNpcs(updatedNPCs);
     setSelectedNPC(updatedNPC);
     
-    // In einer realen Anwendung hier die Änderungen speichern
+    // In a real application, save the changes here
     // saveNPCChanges(updatedNPC, field, oldValue);
   };
 
-  // Demo-NPCs für Entwicklungszwecke generieren
+  // Generate demo NPCs for development purposes
   const generateDemoNPCs = (): NPCItem[] => {
     return [
       {
         id: 'npc_001',
         name: 'village_elder',
-        displayName: 'Dorfältester',
-        description: 'Der weise Älteste des Dorfes mit vielen Geschichten.',
+        displayName: 'Village Elder',
+        description: 'The wise elder of the village with many stories.',
         type: 'quest_giver',
         level: 50,
         data: {},
@@ -98,30 +98,30 @@ const NPCTab = ({ editMode, availableItems = [] }: NPCTabProps) => {
         dialogues: [
           {
             id: 'dialog_001',
-            text: 'Willkommen, Reisender! Was führt dich in unser bescheidenes Dorf?',
+            text: 'Welcome, traveler! What brings you to our humble village?',
             responses: [
               {
                 id: 'response_001',
-                text: 'Ich suche nach Arbeit. Habt Ihr eine Aufgabe für mich?',
+                text: 'I am looking for work. Do you have a task for me?',
                 nextDialogueId: 'dialog_002'
               },
               {
                 id: 'response_002',
-                text: 'Nur auf der Durchreise. Danke für die Begrüßung!',
+                text: 'Just passing through. Thanks for the welcome!',
               }
             ]
           },
           {
             id: 'dialog_002',
-            text: 'In der Tat, es gibt einige Probleme mit Wölfen in den nahen Wäldern. Könntest du uns helfen?',
+            text: 'Indeed, there are some problems with wolves in the nearby forests. Could you help us?',
             responses: [
               {
                 id: 'response_003',
-                text: 'Natürlich, ich werde mich darum kümmern.',
+                text: 'Of course, I will take care of it.',
               },
               {
                 id: 'response_004',
-                text: 'Das klingt zu gefährlich für mich.',
+                text: 'That sounds too dangerous for me.',
               }
             ]
           }
@@ -131,8 +131,8 @@ const NPCTab = ({ editMode, availableItems = [] }: NPCTabProps) => {
       {
         id: 'npc_002',
         name: 'village_merchant',
-        displayName: 'Händler Götz',
-        description: 'Ein freundlicher Händler mit allerlei Waren.',
+        displayName: 'Merchant Götz',
+        description: 'A friendly merchant with all kinds of goods.',
         type: 'merchant',
         level: 30,
         data: {},
@@ -146,17 +146,17 @@ const NPCTab = ({ editMode, availableItems = [] }: NPCTabProps) => {
         shop: { 
           isShop: true, 
           items: [
-            { id: 'item_001', name: 'Heiltrank', price: 50, count: 10, position: 0 },
-            { id: 'item_002', name: 'Manatrank', price: 80, count: 5, position: 1 },
-            { id: 'item_003', name: 'Eisenschwert', price: 500, count: 1, position: 2 }
+            { id: 'item_001', name: 'Health Potion', price: 50, count: 10, position: 0 },
+            { id: 'item_002', name: 'Mana Potion', price: 80, count: 5, position: 1 },
+            { id: 'item_003', name: 'Iron Sword', price: 500, count: 1, position: 2 }
           ] 
         }
       },
       {
         id: 'npc_003',
         name: 'city_guard',
-        displayName: 'Stadtwache',
-        description: 'Eine wachsame Stadtwache, die für Ordnung sorgt.',
+        displayName: 'City Guard',
+        description: 'A vigilant city guard who maintains order.',
         type: 'guard',
         level: 40,
         data: {},
@@ -173,7 +173,7 @@ const NPCTab = ({ editMode, availableItems = [] }: NPCTabProps) => {
 
   return (
     <div className="h-full flex">
-      {/* Linke Seitenleiste: NPC-Liste */}
+      {/* Left sidebar: NPC list */}
       <div className="w-64 h-full">
         <NPCList 
           npcs={npcs} 
@@ -182,7 +182,7 @@ const NPCTab = ({ editMode, availableItems = [] }: NPCTabProps) => {
         />
       </div>
       
-      {/* Hauptbereich: NPC-Editor */}
+      {/* Main area: NPC editor */}
       <div className="flex-1 h-full">
         {selectedNPC ? (
           <NPCEditor 
@@ -194,12 +194,12 @@ const NPCTab = ({ editMode, availableItems = [] }: NPCTabProps) => {
         ) : (
           <div className="h-full flex items-center justify-center bg-cyrus-dark">
             <div className="text-center text-gray-400 p-8 max-w-md">
-              <h2 className="text-xl font-semibold mb-2">Kein NPC ausgewählt</h2>
-              <p>Wählen Sie einen NPC aus der Liste auf der linken Seite, um ihn zu bearbeiten.</p>
-              {isLoading && <p className="mt-4">Lade NPCs...</p>}
+              <h2 className="text-xl font-semibold mb-2">No NPC selected</h2>
+              <p>Select an NPC from the list on the left side to edit it.</p>
+              {isLoading && <p className="mt-4">Loading NPCs...</p>}
               {!isLoading && npcs.length === 0 && (
                 <p className="mt-4">
-                  Keine NPCs gefunden. Stellen Sie sicher, dass die notwendigen Ressourcendateien geladen sind.
+                  No NPCs found. Make sure the necessary resource files are loaded.
                 </p>
               )}
             </div>

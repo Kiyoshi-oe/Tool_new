@@ -14,23 +14,27 @@ export interface NPCShopItem {
   name: string;
   price: number;
   count: number;
-  position: number; // Position in der Shop-Liste
+  position: number; // Position in the shop list
+}
+
+export interface NPCDialogueOption {
+  text: string;
+  next: string;
+  action?: string;
+  condition?: string;
 }
 
 export interface NPCDialogue {
   id: string;
   text: string;
-  responses?: {
-    id: string;
-    text: string;
-    nextDialogueId?: string;
-  }[];
+  options?: NPCDialogueOption[];
 }
 
 export interface NPCAppearance {
   modelFile: string;
   skin?: string;
   animations?: string[];
+  equipment?: string[];
 }
 
 export interface NPCItem {
@@ -38,7 +42,7 @@ export interface NPCItem {
   name: string;
   displayName: string;
   description?: string;
-  type: string; // Typ des NPC (Händler, Questgeber, etc.)
+  type: string; // Type of NPC (merchant, quest giver, etc.)
   level: number;
   data: NPCData;
   position: NPCPosition;
@@ -55,6 +59,7 @@ export interface NPCItem {
   shop?: {
     isShop: boolean;
     items: NPCShopItem[];
+    tabs?: Array<{id: number, name: string}>;
   };
   fields?: {
     propMover?: {
