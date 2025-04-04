@@ -392,6 +392,7 @@ const Index = () => {
                   onLoadResourceFile={() => handleShowFileUpload('header')} 
                   editMode={editMode}
                   onToggleEditMode={handleToggleEditMode}
+                  availableItems={fileData?.items || []}
                 />
               </div>
             ) : (

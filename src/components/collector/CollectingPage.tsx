@@ -3,11 +3,13 @@ import CollectorTab from "./CollectorTab";
 import { Button } from "../ui/button";
 import { Upload, Save, Eye, Edit } from "lucide-react";
 import { toast } from "sonner";
+import { ResourceItem } from '../../types/fileTypes';
 
 interface CollectingPageProps {
   onLoadResourceFile?: () => void; // Callback for the "Load Resource File" button
   editMode?: boolean; // Add editMode prop
   onToggleEditMode?: () => void; // Add toggle function prop
+  availableItems?: ResourceItem[]; // Prop here added
 }
 
 // Erweitere den FC Typ mit der hideSidebar-Eigenschaft
@@ -27,7 +29,7 @@ declare global {
 }
 
 // Komponente markiert, dass die Sidebar versteckt werden soll
-const CollectingPage: CollectingPageComponent = ({ onLoadResourceFile, editMode = false, onToggleEditMode }) => {
+const CollectingPage: CollectingPageComponent = ({ onLoadResourceFile, editMode = false, onToggleEditMode, availableItems = [] }) => {
   const [sContent, setSContent] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -264,7 +266,8 @@ Collecting_PremiumStatusItem
           <CollectorTab 
             fileContent={sContent}
             onSave={handleSave}
-            editMode={editMode} // Pass editMode to CollectorTab
+            editMode={editMode}
+            availableItems={availableItems}
           />
         ) : (
           <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">

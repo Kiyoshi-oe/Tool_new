@@ -15,6 +15,7 @@ export interface NPCShopItem {
   price: number;
   count: number;
   position: number; // Position in the shop list
+  tabId?: number; // ID des Tabs, zu dem das Item gehört
 }
 
 export interface NPCDialogueOption {

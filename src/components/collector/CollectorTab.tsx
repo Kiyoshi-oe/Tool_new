@@ -6,7 +6,7 @@ import { FormField } from "../ui/form-field";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "../ui/table";
 import { parseCollectorData, serializeCollectorData, validateCollectorData, calculatePercentage } from "../../utils/collectorUtils";
 import { CollectorData, CollectingItem, CollectorValidationResult } from "../../types/collectorTypes";
-import { Plus, Save, Trash, AlertTriangle, Search, Filter, X, Copy, ChevronDown, Edit, MoreHorizontal, Download, Upload } from "lucide-react";
+import { Plus, Save, Trash, AlertTriangle, Search, Filter, X, Copy, ChevronDown, Edit, MoreHorizontal, Download, Upload, GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "../ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
@@ -20,6 +20,8 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities';
 import { saveAs } from 'file-saver';
 import { FileWithPath, useDropzone } from 'react-dropzone';
+import AvailableItemsList from '../shared/AvailableItemsList';
+import { ResourceItem } from '../../types/fileTypes';
 
 // Füge globale Styles für Formular-Elemente hinzu
 import './styles/dark-mode.css';
@@ -29,16 +31,7 @@ declare global {
   interface Window {
     APP_CONFIG?: {
       fileData?: {
-        items: Array<{
-          id: string;
-          name: string;
-          displayName?: string;
-          description?: string;
-          data?: {
-            dwItemKind1?: string | number;
-            [key: string]: any;
-          };
-        }>;
+        items: ResourceItem[]; // Verwende ResourceItem Typ
       };
     };
   }
@@ -47,60 +40,26 @@ declare global {
 interface CollectorTabProps {
   fileContent: string;
   onSave: (content: string) => void;
-  editMode?: boolean; // Add editMode prop
+  editMode?: boolean;
+  availableItems?: ResourceItem[];
 }
 
-const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMode = false }) => {
+const CollectorTab: React.FC<CollectorTabProps> = ({ 
+  fileContent, 
+  onSave, 
+  editMode = false, 
+  availableItems = []
+}) => {
   const [collectorData, setCollectorData] = useState<CollectorData | null>(null);
   const [validation, setValidation] = useState<CollectorValidationResult | null>(null);
   const [activeTab, setActiveTab] = useState("enchant");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [showAddItemDialog, setShowAddItemDialog] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<'items' | 'premiumItems' | 'premiumStatusItems'>('items');
+  const [selectedCategoryForDialog, setSelectedCategoryForDialog] = useState<'items' | 'premiumItems' | 'premiumStatusItems'>('items');
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showBatchImportDialog, setShowBatchImportDialog] = useState(false);
-  const [fileDataLoaded, setFileDataLoaded] = useState(false);
   
-  // Laden der globalen spec_item.txt-Daten bei Komponentenmontage
-  useEffect(() => {
-    // Prüfe, ob die fileData im globalen Scope existiert
-    const checkForFileData = () => {
-      if (window.APP_CONFIG && window.APP_CONFIG.fileData) {
-        console.log("Spec_item Daten gefunden, Items:", window.APP_CONFIG.fileData.items?.length || 0);
-        setFileDataLoaded(true);
-        return true;
-      }
-      return false;
-    };
-    
-    // Wenn die Daten noch nicht geladen sind, warten und erneut prüfen
-    if (!checkForFileData()) {
-      console.log("Warte auf das Laden der spec_item.txt-Daten...");
-      
-      // Event-Listener für Datenaktualisierungen
-      const handleDataLoaded = () => {
-        checkForFileData();
-      };
-      
-      // Custom Event Listener für Datenladung
-      window.addEventListener('fileDataLoaded', handleDataLoaded);
-      
-      // Alle 2 Sekunden prüfen, ob die Daten geladen wurden
-      const interval = setInterval(() => {
-        if (checkForFileData()) {
-          clearInterval(interval);
-        }
-      }, 2000);
-      
-      // Cleanup
-      return () => {
-        window.removeEventListener('fileDataLoaded', handleDataLoaded);
-        clearInterval(interval);
-      };
-    }
-  }, []);
-
   // Define sensors for DnD correctly, without calling useSensors inside useMemo
   const pointerSensor = useSensor(PointerSensor, {
     activationConstraint: {
@@ -179,6 +138,11 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
     if (!collectorData || !editMode) return; // Check if editMode is enabled
     
     const updatedItems = [...collectorData[category]];
+    // Ensure index is valid
+    if (index < 0 || index >= updatedItems.length) {
+      console.error(`Invalid index ${index} for category ${category}`);
+      return;
+    }
     updatedItems[index] = { 
       ...updatedItems[index], 
       [field]: field === 'probability' ? Number(value) : value 
@@ -194,20 +158,11 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
     setValidation(validateCollectorData(updatedData));
   };
   
-  // Add item
-  const handleAddItem = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
-    if (!collectorData || !editMode) return; // Check if editMode is enabled
-    
-    const updatedItems = [...collectorData[category], { itemId: "II_NEW_ITEM", probability: 0 }];
-    
-    const updatedData = {
-      ...collectorData,
-      [category]: updatedItems,
-      [`${category}Total`]: updatedItems.reduce((sum, item) => sum + item.probability, 0)
-    };
-    
-    setCollectorData(updatedData);
-    setValidation(validateCollectorData(updatedData));
+  // Function to open the add item dialog
+  const openAddItemDialog = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
+    if (!editMode) return;
+    setSelectedCategoryForDialog(category);
+    setShowAddItemDialog(true);
   };
   
   // Remove item
@@ -218,6 +173,11 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
     if (!collectorData || !editMode) return; // Check if editMode is enabled
     
     const updatedItems = [...collectorData[category]];
+     // Ensure index is valid
+     if (index < 0 || index >= updatedItems.length) {
+      console.error(`Invalid index ${index} for category ${category}`);
+      return;
+    }
     updatedItems.splice(index, 1);
     
     const updatedData = {
@@ -237,10 +197,16 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
   ) => {
     if (!collectorData || !editMode) return; // Check if editMode is enabled
     
-    const itemToDuplicate = collectorData[category][index];
+    const itemsInCategory = collectorData[category];
+    // Ensure index is valid
+    if (index < 0 || index >= itemsInCategory.length) {
+      console.error(`Invalid index ${index} for category ${category}`);
+      return;
+    }
+    const itemToDuplicate = itemsInCategory[index];
     const duplicatedItem = { ...itemToDuplicate, probability: 0 }; // Default with 0 probability
     
-    const updatedItems = [...collectorData[category]];
+    const updatedItems = [...itemsInCategory];
     updatedItems.splice(index + 1, 0, duplicatedItem); // Insert after the original
     
     const updatedData = {
@@ -251,18 +217,15 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
     
     setCollectorData(updatedData);
     setValidation(validateCollectorData(updatedData));
-    toast.success("Item duplicated");
   };
   
-  // Function to add enchantments
+  // Add enchant
   const handleAddEnchant = () => {
     if (!collectorData || !editMode) return; // Check if editMode is enabled
     
-    const nextLevel = collectorData.enchant.length > 0 
-      ? Math.max(...collectorData.enchant.map(e => e.level)) + 1 
-      : 0;
-    
-    const updatedEnchant = [...collectorData.enchant, { level: nextLevel, chance: 0 }];
+    const maxLevel = collectorData.enchant.reduce((max, item) => Math.max(max, item.level), 0);
+    const newEnchant = { level: maxLevel + 1, chance: 0 };
+    const updatedEnchant = [...collectorData.enchant, newEnchant];
     
     const updatedData = {
       ...collectorData,
@@ -274,11 +237,16 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
     setValidation(validateCollectorData(updatedData));
   };
   
-  // Function to remove enchantments
+  // Remove enchant
   const handleRemoveEnchant = (index: number) => {
-    if (!collectorData) return;
+    if (!collectorData || !editMode) return; // Check if editMode is enabled
     
     const updatedEnchant = [...collectorData.enchant];
+    // Ensure index is valid
+    if (index < 0 || index >= updatedEnchant.length) {
+      console.error(`Invalid index ${index} for enchant`);
+      return;
+    }
     updatedEnchant.splice(index, 1);
     
     const updatedData = {
@@ -291,41 +259,44 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
     setValidation(validateCollectorData(updatedData));
   };
   
-  // Enchant Level change
+  // Change enchant level
   const handleEnchantLevelChange = (index: number, level: number) => {
-    if (!collectorData) return;
+    if (!collectorData || !editMode) return; // Check if editMode is enabled
     
     const updatedEnchant = [...collectorData.enchant];
+    // Ensure index is valid
+    if (index < 0 || index >= updatedEnchant.length) {
+      console.error(`Invalid index ${index} for enchant`);
+      return;
+    }
     updatedEnchant[index] = { ...updatedEnchant[index], level };
     
     const updatedData = {
       ...collectorData,
-      enchant: updatedEnchant
+      enchant: updatedEnchant,
+      // Total bleibt gleich, da nur Level geändert
     };
     
     setCollectorData(updatedData);
+    setValidation(validateCollectorData(updatedData));
   };
   
-  // Function to filter items based on the search
-  const filteredItemsMemo = useMemo(() => {
-    const filterItems = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
+  // Filter items based on search query
+  const filteredItems = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
       if (!collectorData) return [];
       
-      return collectorData[category].filter(item => 
+    const items = collectorData[category];
+    
+    if (!searchQuery) return items;
+    
+    return items.filter(item => 
         item.itemId.toLowerCase().includes(searchQuery.toLowerCase())
       );
     };
     
-    return {
-      items: filterItems('items'),
-      premiumItems: filterItems('premiumItems'),
-      premiumStatusItems: filterItems('premiumStatusItems')
-    };
-  }, [collectorData, searchQuery]);
-  
-  // Function to delete multiple selected items
+  // Remove selected items
   const handleRemoveSelectedItems = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
-    if (!collectorData || selectedItems.length === 0) return;
+    if (!collectorData || selectedItems.length === 0 || !editMode) return;
     
     const updatedItems = collectorData[category].filter(item => !selectedItems.includes(item.itemId));
     
@@ -337,439 +308,242 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
     
     setCollectorData(updatedData);
     setValidation(validateCollectorData(updatedData));
-    setSelectedItems([]);
-    toast.success(`${selectedItems.length} items deleted`);
+    setSelectedItems([]); // Clear selection
+    toast.success(`${selectedItems.length} items removed from ${category}`);
   };
   
-  // Function to adjust probabilities of selected items
+  // Adjust item probabilities
   const adjustProbabilities = (
     category: 'items' | 'premiumItems' | 'premiumStatusItems', 
     method: 'equal' | 'proportional' | 'reset'
   ) => {
-    if (!collectorData || selectedItems.length === 0) return;
-    
-    const updatedItems = [...collectorData[category]];
-    
-    // Calculate the total probability of all non-selected items
-    const nonSelectedTotal = updatedItems
-      .filter(item => !selectedItems.includes(item.itemId))
-      .reduce((sum, item) => sum + item.probability, 0);
-    
-    // Available probability for selected items
-    const availableProbability = 1000000 - nonSelectedTotal;
-    
-    if (method === 'equal') {
-      // Equal distribution across all selected items
-      const equalProbability = Math.floor(availableProbability / selectedItems.length);
-      
-      updatedItems.forEach(item => {
-        if (selectedItems.includes(item.itemId)) {
-          item.probability = equalProbability;
-        }
-      });
-    } else if (method === 'proportional') {
-      // Calculate the current total probability of selected items
-      const selectedTotal = updatedItems
-        .filter(item => selectedItems.includes(item.itemId))
-        .reduce((sum, item) => sum + item.probability, 0);
-      
-      if (selectedTotal > 0) {
-        // Proportional adjustment
-        const ratio = availableProbability / selectedTotal;
-        
-        updatedItems.forEach(item => {
-          if (selectedItems.includes(item.itemId)) {
-            item.probability = Math.floor(item.probability * ratio);
-          }
+    if (!collectorData || !editMode) return;
+
+    const items = [...collectorData[category]];
+    const totalTarget = 1000000; // 1 million
+
+    let updatedItems: CollectingItem[] = [];
+
+    switch (method) {
+      case 'equal': {
+        if (items.length === 0) return;
+        const equalProb = Math.floor(totalTarget / items.length);
+        let remainder = totalTarget % items.length;
+        updatedItems = items.map((item, index) => {
+          const prob = equalProb + (index < remainder ? 1 : 0);
+          return { ...item, probability: prob };
         });
+        toast.success(`Probabilities in ${category} set equally.`);
+        break;
       }
-    } else if (method === 'reset') {
-      // Reset all selected items to 0
-      updatedItems.forEach(item => {
-        if (selectedItems.includes(item.itemId)) {
-          item.probability = 0;
-        }
-      });
-    }
-    
-    // Round differences to get exactly 1,000,000
-    const newTotal = updatedItems.reduce((sum, item) => sum + item.probability, 0);
-    const diff = 1000000 - newTotal;
-    
-    if (diff !== 0 && selectedItems.length > 0) {
-      // Add the difference to the first selected item
-      const firstSelectedItem = updatedItems.find(item => selectedItems.includes(item.itemId));
-      if (firstSelectedItem) {
-        firstSelectedItem.probability += diff;
-      }
-    }
-    
-    const updatedData = {
-      ...collectorData,
-      [category]: updatedItems,
-      [`${category}Total`]: updatedItems.reduce((sum, item) => sum + item.probability, 0)
-    };
-    
-    setCollectorData(updatedData);
-    setValidation(validateCollectorData(updatedData));
-    toast.success(`Probabilities adjusted using ${method} distribution`);
-  };
-  
-  // Function to distribute all probabilities evenly
-  const distributeEvenly = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
-    if (!collectorData || collectorData[category].length === 0) return;
-    
-    const totalItems = collectorData[category].length;
-    
-    // If there's only one item, it gets the entire probability
-    if (totalItems === 1) {
-      const updatedItems = [...collectorData[category]];
-      updatedItems[0] = { ...updatedItems[0], probability: 1000000 };
-      
-      const updatedData = {
-        ...collectorData,
-        [category]: updatedItems,
-        [`${category}Total`]: 1000000
-      };
-      
-      setCollectorData(updatedData);
-      setValidation(validateCollectorData(updatedData));
-      toast.success("All probability assigned to the single item");
-      return;
-    }
-    
-    // Even distribution
-    const baseProbability = Math.floor(1000000 / totalItems);
-    let remainder = 1000000 % totalItems;
-    
-    const updatedItems = [...collectorData[category]].map(item => {
-      const extraAmount = remainder > 0 ? 1 : 0;
-      remainder -= extraAmount;
-      return { ...item, probability: baseProbability + extraAmount };
-    });
-    
-    const updatedData = {
-      ...collectorData,
-      [category]: updatedItems,
-      [`${category}Total`]: updatedItems.reduce((sum, item) => sum + item.probability, 0)
-    };
-    
-    setCollectorData(updatedData);
-    setValidation(validateCollectorData(updatedData));
-    toast.success(`Probabilities evenly distributed across all ${totalItems} items`);
-  };
-  
-  // Function to distribute enchantment probabilities evenly
-  const distributeEnchantEvenly = () => {
-    if (!collectorData || collectorData.enchant.length === 0) return;
-    
-    const totalEnchants = collectorData.enchant.length;
-    
-    // If there's only one enchantment, it gets the entire probability
-    if (totalEnchants === 1) {
-      const updatedEnchant = [...collectorData.enchant];
-      updatedEnchant[0] = { ...updatedEnchant[0], chance: 1000 };
-      
-      const updatedData = {
-        ...collectorData,
-        enchant: updatedEnchant,
-        enchantTotal: 1000
-      };
-      
-      setCollectorData(updatedData);
-      setValidation(validateCollectorData(updatedData));
-      toast.success("All probability assigned to the single enchantment");
-      return;
-    }
-    
-    // Even distribution
-    const baseChance = Math.floor(1000 / totalEnchants);
-    let remainder = 1000 % totalEnchants;
-    
-    const updatedEnchant = [...collectorData.enchant].map(enchant => {
-      const extraAmount = remainder > 0 ? 1 : 0;
-      remainder -= extraAmount;
-      return { ...enchant, chance: baseChance + extraAmount };
-    });
-    
-    const updatedData = {
-      ...collectorData,
-      enchant: updatedEnchant,
-      enchantTotal: updatedEnchant.reduce((sum, enchant) => sum + enchant.chance, 0)
-    };
-    
-    setCollectorData(updatedData);
-    setValidation(validateCollectorData(updatedData));
-    toast.success(`Enchantment chances evenly distributed across all ${totalEnchants} levels`);
-  };
-  
-  // Dialog for adding new items - with dark mode styling
-  const ItemSearchDialog = () => {
-    const [itemSearchQuery, setItemSearchQuery] = useState("");
-    const [searchResults, setSearchResults] = useState<{id: string, name: string, description?: string}[]>([]);
-    const [selectedItemId, setSelectedItemId] = useState("");
-    const [probability, setProbability] = useState(1000);
-    const [searchType, setSearchType] = useState<'id' | 'name' | 'category'>('id');
-    const [isSearching, setIsSearching] = useState(false);
-    
-    // Zugriff auf die globale fileData-Variable für die spec_item.txt-Daten
-    useEffect(() => {
-      // Prüfe, ob Daten in der globalen Variable verfügbar sind
-      if (window.APP_CONFIG && window.APP_CONFIG.fileData && window.APP_CONFIG.fileData.items) {
-        // Initial suchen, wenn Dialog geöffnet wird
-        handleSearch();
-      }
-    }, [showAddItemDialog]);
-    
-    // Verbesserte Suchfunktion mit Zugriff auf die tatsächlichen spec_item.txt-Daten
-    const handleSearch = () => {
-      try {
-        setIsSearching(true);
-        let results: {id: string, name: string, description?: string}[] = [];
-        
-        // Prüfe, ob Daten in der globalen Variable verfügbar sind
-        if (window.APP_CONFIG && window.APP_CONFIG.fileData && window.APP_CONFIG.fileData.items) {
-          const items = window.APP_CONFIG.fileData.items;
+      case 'proportional': {
+        const currentTotal = collectorData[`${category}Total`];
+        if (currentTotal === 0 || items.length === 0) return;
+
+        let cumulativeProb = 0;
+        updatedItems = items.map((item, index) => {
+          const proportion = item.probability / currentTotal;
+          let newProb = Math.floor(proportion * totalTarget);
           
-          // Suchlogik basierend auf dem Suchtyp
-          if (searchType === 'id') {
-            results = items
-              .filter(item => item.id.toLowerCase().includes(itemSearchQuery.toLowerCase()))
-              .map(item => ({
-                id: item.id,
-                name: item.displayName || item.name,
-                description: item.description
-              }))
-              .slice(0, 100); // Begrenze die Ergebnisse auf 100 Items
-          } else if (searchType === 'name') {
-            results = items
-              .filter(item => 
-                (item.displayName && item.displayName.toLowerCase().includes(itemSearchQuery.toLowerCase())) ||
-                (item.name && item.name.toLowerCase().includes(itemSearchQuery.toLowerCase()))
-              )
-              .map(item => ({
-                id: item.id,
-                name: item.displayName || item.name,
-                description: item.description
-              }))
-              .slice(0, 100);
-          } else if (searchType === 'category') {
-            // Suche nach der Kategorie im data-Objekt
-            results = items
-              .filter(item => {
-                const category = item.data?.dwItemKind1 || '';
-                return category.toString().toLowerCase().includes(itemSearchQuery.toLowerCase());
-              })
-              .map(item => ({
-                id: item.id,
-                name: item.displayName || item.name,
-                description: item.description
-              }))
-              .slice(0, 100);
+          // Handle potential rounding issues by assigning remainder to the last item
+          if (index === items.length - 1 && cumulativeProb + newProb !== totalTarget) {
+             newProb = totalTarget - cumulativeProb; 
           }
-        } else {
-          // Fallback, wenn keine fileData gefunden wurde
-          console.warn("Keine spec_item.txt-Daten gefunden, verwende Beispieldaten");
           
-          // Beispieldaten für den Demo-Modus
-          const demoResults = [
-            { id: "II_SYS_SYS_SCR_BXCOLLPREM", name: "Premium Collector Box" },
-            { id: "II_SYS_SYS_SCR_MINIWHEEL", name: "Mini Fortune Wheel" },
-            { id: "II_SYS_SYS_SCR_WHEEL", name: "Fortune Wheel" },
-            { id: "II_CHP_COLLECTOR", name: "Collector Chip" }
-          ].filter(item => 
-            item.id.toLowerCase().includes(itemSearchQuery.toLowerCase()) || 
-            item.name.toLowerCase().includes(itemSearchQuery.toLowerCase())
-          );
-          
-          results = demoResults;
-        }
-        
-        setSearchResults(results);
-        if (results.length > 0 && !selectedItemId) {
-          setSelectedItemId(results[0].id);
-        }
-        
-      } catch (error) {
-        console.error("Fehler bei der Suche:", error);
-        toast.error("Fehler bei der Suche nach Items");
-      } finally {
-        setIsSearching(false);
+          cumulativeProb += newProb;
+          return { ...item, probability: newProb };
+        });
+        toast.success(`Probabilities in ${category} adjusted proportionally.`);
+        break;
       }
+       case 'reset': {
+        updatedItems = items.map(item => ({ ...item, probability: 0 }));
+        toast.success(`Probabilities in ${category} reset to 0.`);
+        break;
+      }
+      default:
+        return;
+    }
+    
+    // Ensure the total is exactly the target by adjusting the last item if necessary
+    // This check might be redundant after the adjustment within the proportional case
+    const finalTotal = updatedItems.reduce((sum, item) => sum + item.probability, 0);
+    if (finalTotal !== totalTarget && updatedItems.length > 0 && method !== 'reset') {
+      const diff = totalTarget - finalTotal;
+      if(updatedItems.length > 0) updatedItems[updatedItems.length - 1].probability += diff;
+    }
+    
+    const updatedData = {
+      ...collectorData,
+      [category]: updatedItems,
+      [`${category}Total`]: updatedItems.reduce((sum, item) => sum + item.probability, 0)
     };
     
-    const handleAddItem = () => {
-      if (!selectedItemId || !collectorData) return;
+    setCollectorData(updatedData);
+    setValidation(validateCollectorData(updatedData));
+  };
+  
+  // Simple alias for clarity
+  const distributeEvenly = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
+    adjustProbabilities(category, 'equal');
+  };
+
+  // Adjust enchant probabilities
+  const adjustEnchantProbabilities = (method: 'equal' | 'proportional' | 'reset') => {
+    if (!collectorData || !editMode) return;
+
+    const enchants = [...collectorData.enchant];
+    const totalTarget = 1000000;
+    let updatedEnchants: { level: number; chance: number }[] = [];
+
+    switch (method) {
+        case 'equal': {
+            if (enchants.length === 0) return;
+            const equalProb = Math.floor(totalTarget / enchants.length);
+            let remainder = totalTarget % enchants.length;
+            updatedEnchants = enchants.map((enchant, index) => {
+                const prob = equalProb + (index < remainder ? 1 : 0);
+                return { ...enchant, chance: prob };
+            });
+            toast.success(`Enchant probabilities set equally.`);
+            break;
+        }
+        case 'proportional': {
+            const currentTotal = collectorData.enchantTotal;
+            if (currentTotal === 0 || enchants.length === 0) return;
+
+            let cumulativeProb = 0;
+            updatedEnchants = enchants.map((enchant, index) => {
+                const proportion = enchant.chance / currentTotal;
+                let newProb = Math.floor(proportion * totalTarget);
+                if (index === enchants.length - 1 && cumulativeProb + newProb !== totalTarget) {
+                    newProb = totalTarget - cumulativeProb;
+                }
+                cumulativeProb += newProb;
+                return { ...enchant, chance: newProb };
+            });
+            toast.success(`Enchant probabilities adjusted proportionally.`);
+            break;
+        }
+        case 'reset': {
+            updatedEnchants = enchants.map(enchant => ({ ...enchant, chance: 0 }));
+            toast.success(`Enchant probabilities reset to 0.`);
+            break;
+        }
+        default: return;
+    }
+
+    // Ensure the total is exactly the target by adjusting the last item if necessary
+    const finalTotal = updatedEnchants.reduce((sum, item) => sum + item.chance, 0);
+    if (finalTotal !== totalTarget && updatedEnchants.length > 0 && method !== 'reset') {
+        const diff = totalTarget - finalTotal;
+         if(updatedEnchants.length > 0) updatedEnchants[updatedEnchants.length - 1].chance += diff;
+    }
+    
+    const updatedData = {
+      ...collectorData,
+        enchant: updatedEnchants,
+        enchantTotal: updatedEnchants.reduce((sum, item) => sum + item.chance, 0)
+    };
+    
+    setCollectorData(updatedData);
+    setValidation(validateCollectorData(updatedData));
+  };
+  
+  // Simple alias for clarity
+  const distributeEnchantEvenly = () => {
+    adjustEnchantProbabilities('equal');
+  };
+
+  // --- Definition der Dialog-Komponenten und Hilfsfunktionen --- 
+
+  // Komponente für den "Add Item" Dialog
+  const AddItemDialog = () => {
+    const [newItemId, setNewItemId] = useState("");
+    const [newItemProbability, setNewItemProbability] = useState(0);
+
+    // Logge die Länge der Prop, die vom CollectorTab kommt
+    console.log("[AddItemDialog] Rendering. Erhaltene availableItems Prop Länge:", availableItems.length); 
+
+    // Funktion zum Hinzufügen des Items (wird im Dialog-Footer aufgerufen)
+    const handleConfirmAddItem = () => {
+      if (!collectorData || !editMode || !newItemId.trim()) {
+        toast.error("Item ID darf nicht leer sein.");
+        return;
+      }
       
-      const newItem = {
-        itemId: selectedItemId,
-        probability: probability
-      };
-      
-      const updatedItems = [...collectorData[selectedCategory], newItem];
+      const newItem: CollectingItem = { itemId: newItemId, probability: newItemProbability };
+      const updatedItems = [...collectorData[selectedCategoryForDialog], newItem];
       
       const updatedData = {
         ...collectorData,
-        [selectedCategory]: updatedItems,
-        [`${selectedCategory}Total`]: updatedItems.reduce((sum, item) => sum + item.probability, 0)
+        [selectedCategoryForDialog]: updatedItems,
+        [`${selectedCategoryForDialog}Total`]: updatedItems.reduce((sum, item) => sum + item.probability, 0)
       };
       
       setCollectorData(updatedData);
       setValidation(validateCollectorData(updatedData));
       setShowAddItemDialog(false);
-      toast.success(`Item ${selectedItemId} added to ${selectedCategory}`);
+      setNewItemId(""); // Reset Dialog state
+      setNewItemProbability(0);
+      toast.success(`Item ${newItemId} zu ${selectedCategoryForDialog} hinzugefügt`);
+    };
+
+    // Funktion, die aufgerufen wird, wenn ein Item aus der Liste ausgewählt wird
+    const handleSelectItemFromList = (item: ResourceItem) => {
+      setNewItemId(item.id); // Setze die ID des ausgewählten Items
+      toast.info(`${item.displayName || item.name} ausgewählt.`);
     };
     
     return (
       <Dialog open={showAddItemDialog} onOpenChange={setShowAddItemDialog}>
-        <DialogContent className="sm:max-w-[500px] bg-cyrus-dark-light border-cyrus-dark-lightest">
+        {/* Größerer Dialog für die Liste */}
+        <DialogContent className="max-w-4xl bg-cyrus-dark-light border-cyrus-dark-lightest">
           <DialogHeader>
-            <DialogTitle className="text-gray-200">Add new item</DialogTitle>
+            <DialogTitle className="text-gray-200">Neues Item zu "{selectedCategoryForDialog}" hinzufügen</DialogTitle>
             <DialogDescription className="text-gray-400">
-              Search for an item and specify its probability
+              Suchen und wählen Sie ein Item aus der Liste oder geben Sie die Item-ID manuell ein.
             </DialogDescription>
           </DialogHeader>
           
-          <div className="flex gap-2 mb-4">
-            <div className="flex-1">
-              <Input
-                placeholder="Search for an item..."
-                value={itemSearchQuery}
-                onChange={(e) => setItemSearchQuery(e.target.value)}
-                className="bg-cyrus-dark-lighter text-gray-300"
+          {/* Layout mit 2 Spalten */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4"> 
+            {/* Linke Spalte: Verfügbare Items Liste */}
+            <div>
+              {/* Verwende die 'availableItems'-Prop aus CollectorTab */}
+              <AvailableItemsList 
+                availableItems={availableItems} 
+                onSelectItem={handleSelectItemFromList} 
               />
-            </div>
-            <Button onClick={handleSearch} className="bg-cyrus-blue">
-              <Search className="h-4 w-4" />
-            </Button>
           </div>
           
-          <div className="flex gap-2 mb-4">
-            <Button 
-              variant={searchType === 'id' ? 'default' : 'outline'} 
-              onClick={() => setSearchType('id')}
-              className={searchType === 'id' ? 'bg-cyrus-blue' : 'text-gray-300 border-cyrus-dark-lightest'}
-              size="sm"
-            >
-              ID
-            </Button>
-            <Button 
-              variant={searchType === 'name' ? 'default' : 'outline'} 
-              onClick={() => setSearchType('name')}
-              className={searchType === 'name' ? 'bg-cyrus-blue' : 'text-gray-300 border-cyrus-dark-lightest'}
-              size="sm"
-            >
-              Name
-            </Button>
-            <Button 
-              variant={searchType === 'category' ? 'default' : 'outline'} 
-              onClick={() => setSearchType('category')}
-              className={searchType === 'category' ? 'bg-cyrus-blue' : 'text-gray-300 border-cyrus-dark-lightest'}
-              size="sm"
-            >
-              Kategorie
-            </Button>
+            {/* Rechte Spalte: Eingabefelder */}
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="newItemId" className="text-gray-300">Item ID</Label>
+                <Input
+                  id="newItemId"
+                  value={newItemId}
+                  onChange={(e) => setNewItemId(e.target.value)}
+                  placeholder="II_WEA_..."
+                  className="mt-1 bg-cyrus-dark text-white border-cyrus-dark-lightest"
+                  disabled={!editMode}
+                />
+                 <p className="text-xs text-gray-400 mt-1">Sie können ein Item aus der linken Liste auswählen oder die ID manuell eingeben.</p>
           </div>
-          
-          <div className="flex flex-wrap gap-2 mb-4">
-            <Button 
-              variant="ghost"
-              size="xs"
-              onClick={() => {
-                setItemSearchQuery("II_WEA");
-                handleSearch();
-              }}
-              className="text-gray-300"
-            >
-              Waffen
-            </Button>
-            <Button 
-              variant="ghost"
-              size="xs"
-              onClick={() => {
-                setItemSearchQuery("II_ARM");
-                handleSearch();
-              }}
-              className="text-gray-300"
-            >
-              Rüstung
-            </Button>
-            <Button 
-              variant="ghost"
-              size="xs"
-              onClick={() => {
-                setItemSearchQuery("II_GEN");
-                handleSearch();
-              }}
-              className="text-gray-300"
-            >
-              Gegenstände
-            </Button>
-            <Button 
-              variant="ghost"
-              size="xs"
-              onClick={() => {
-                setItemSearchQuery("II_SYS");
-                handleSearch();
-              }}
-              className="text-gray-300"
-            >
-              System
-            </Button>
-            <Button 
-              variant="ghost"
-              size="xs"
-              onClick={() => {
-                setItemSearchQuery("II_GOLD");
-                handleSearch();
-              }}
-              className="text-gray-300"
-            >
-              Gold
-            </Button>
-          </div>
-          
-          <ScrollArea className="max-h-[200px] mb-4 bg-cyrus-dark-lightest p-2 rounded">
-            {isSearching ? (
-              <div className="flex justify-center items-center h-20">
-                <div className="animate-spin h-8 w-8 border-4 border-cyrus-blue border-t-transparent rounded-full"></div>
-              </div>
-            ) : searchResults.length > 0 ? (
-              searchResults.map((result) => (
-                <div 
-                  key={result.id}
-                  className={`p-2 cursor-pointer rounded ${selectedItemId === result.id ? 'bg-cyrus-blue' : 'hover:bg-cyrus-dark-lighter'}`}
-                  onClick={() => setSelectedItemId(result.id)}
-                >
-                  <div className="font-bold text-gray-200">{result.id}</div>
-                  <div className="text-sm text-gray-300">{result.name}</div>
-                  {result.description && (
-                    <div className="text-xs text-gray-400 mt-1 line-clamp-2">{result.description}</div>
-                  )}
-                </div>
-              ))
-            ) : !fileDataLoaded && window.APP_CONFIG?.fileData === undefined ? (
-              <div className="text-center text-gray-400 py-4">
-                Spec_item.txt-Daten werden geladen... Dies kann einige Momente dauern.
-              </div>
-            ) : (
-              <div className="text-center text-gray-400 py-4">
-                {itemSearchQuery 
-                  ? "Keine Ergebnisse gefunden. Bitte andere Suchbegriffe verwenden."
-                  : "Bitte gib einen Suchbegriff ein, um Items zu finden."}
-              </div>
-            )}
-          </ScrollArea>
-          
-          <div className="flex items-center gap-4 mb-4">
-            <Label htmlFor="probability" className="w-32 text-gray-300">Probability:</Label>
+              <div>
+                <Label htmlFor="newItemProbability" className="text-gray-300">Probability</Label>
             <Input
-              id="probability"
+                  id="newItemProbability"
               type="number"
-              value={probability}
-              onChange={(e) => setProbability(parseInt(e.target.value, 10))}
-              className="bg-cyrus-dark-lighter text-gray-300"
-            />
+                  value={newItemProbability}
+                  onChange={(e) => setNewItemProbability(Number(e.target.value))}
+                  min="0"
+                  className="mt-1 bg-cyrus-dark text-white border-cyrus-dark-lightest"
+                  disabled={!editMode}
+                />
+              </div>
+            </div>
           </div>
           
           <DialogFooter>
@@ -778,14 +552,14 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
               onClick={() => setShowAddItemDialog(false)}
               className="text-gray-300 border-cyrus-dark-lightest"
             >
-              Cancel
+               Abbrechen
             </Button>
             <Button 
-              onClick={handleAddItem} 
-              disabled={!selectedItemId}
+               onClick={handleConfirmAddItem} 
+               disabled={!editMode || !newItemId.trim()}
               className="bg-cyrus-blue"
             >
-              Add Item
+               Item hinzufügen
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1031,7 +805,7 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
                 value={batchText}
                 onChange={(e) => setBatchText(e.target.value)}
                 className="w-full h-40 mt-2 p-3 bg-cyrus-dark-lighter text-gray-300 text-sm font-mono rounded-md border border-cyrus-dark-lightest"
-                placeholder="II_SYS_SYS_SCR_BXCOLL 10000&#10;II_GEN_GEM_ELE_WIND 5000&#10;II_ARM_M_CLO_SHIRT01_1 20000"
+                placeholder={"II_SYS_SYS_SCR_BXCOLL 10000\nII_GEN_GEM_ELE_WIND 5000\nII_ARM_M_CLO_SHIRT01_1 20000"}
               />
               
               {errorMessage && (
@@ -1116,7 +890,7 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
       .slice(0, maxItems);
     
     // Der höchste Wert für die Skalierung
-    const maxProbability = sortedItems[0].probability;
+    const maxProbability = sortedItems.length > 0 ? sortedItems[0].probability : 1; // Avoid division by zero
     
     // Für die Prozentwerte
     const total = collectorData[`${category}Total`];
@@ -1127,8 +901,8 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
         
         <div className="space-y-3">
           {sortedItems.map((item, index) => {
-            const percentage = (item.probability / total) * 100;
-            const barWidth = `${(item.probability / maxProbability) * 100}%`;
+            const percentage = total > 0 ? (item.probability / total) * 100 : 0;
+            const barWidth = maxProbability > 0 ? `${(item.probability / maxProbability) * 100}%` : '0%';
             
             return (
               <div key={index} className="relative">
@@ -1154,1164 +928,461 @@ const CollectorTab: React.FC<CollectorTabProps> = ({ fileContent, onSave, editMo
     );
   };
   
-  // Item search bar component with dark mode styling
+  // --- Definition der Render-Funktionen --- 
+
   const ItemSearchBar = ({ category }: { category: 'items' | 'premiumItems' | 'premiumStatusItems' }) => {
+    
     return (
-      <div className="flex flex-wrap gap-2 items-center mb-4">
-        <div className="flex-1 flex gap-2 items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+        <div className="flex items-center gap-2 flex-1 min-w-[200px]">
             <Input
               placeholder="Search items..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 bg-cyrus-dark-lighter text-gray-300 border-cyrus-dark-lightest"
+            className="bg-cyrus-dark-lighter border-cyrus-dark-lightest text-gray-300"
             />
             {searchQuery && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="absolute right-1 top-1 text-gray-400 hover:text-gray-300"
-                onClick={() => setSearchQuery("")}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="filter" className="gap-1 text-white">
-                <Filter className="h-4 w-4" />
-                Filter
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="bg-cyrus-dark-lighter border-cyrus-dark-lightest">
-              <DropdownMenuItem onClick={() => setSearchQuery("II_SYS")} className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200">
-                System Items
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSearchQuery("II_GEN_GEM")} className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200">
-                Gem Items
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSearchQuery("II_ARM")} className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200">
-                Armor Items
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSearchQuery("II_WEA")} className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200">
-                Weapon Items
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            <Button variant="ghost" size="icon" onClick={() => setSearchQuery('')} className="h-8 w-8">
+              <X className="h-4 w-4 text-gray-400" />
+            </Button>
+          )}
         </div>
         
-        <div className="flex gap-2">
-          <Button 
-            variant="add" 
-            size="sm"
-            onClick={() => {
-              setSelectedCategory(category);
-              setShowAddItemDialog(true);
-            }}
-            className="flex items-center text-white"
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            Add
-          </Button>
+        <div className="flex items-center gap-2">
+          {selectedItems.length > 0 && (
+              <Button 
+              variant="destructive" 
+              onClick={() => handleRemoveSelectedItems(category)}
+              disabled={!editMode}
+              size="sm"
+            >
+              <Trash className="mr-2 h-4 w-4" />
+              Delete Selected ({selectedItems.length})
+              </Button>
+            )}
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="import" size="sm" className="flex items-center text-white">
-                <Download className="mr-1 h-4 w-4" />
-                Import/Export
-                <ChevronDown className="ml-1 h-3 w-3" />
+              <Button variant="outline" size="sm" className="text-gray-300 border-cyrus-dark-lightest">
+                Distribute Probability
+                <ChevronDown className="ml-2 h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="bg-cyrus-dark-lighter border-cyrus-dark-lightest">
-              <DropdownMenuItem 
-                onClick={() => exportItemList(category)}
-                className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
-              >
+            <DropdownMenuContent className="bg-cyrus-dark border-cyrus-dark-lightest text-gray-300">
+              <DropdownMenuItem onClick={() => adjustProbabilities(category, 'equal')} disabled={!editMode}>
+                Distribute Equally
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => adjustProbabilities(category, 'proportional')} disabled={!editMode}>
+                Adjust Proportionally
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => adjustProbabilities(category, 'reset')} disabled={!editMode}>
+                Reset to 0
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="text-gray-300 border-cyrus-dark-lightest">
+                File Actions
+                <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="bg-cyrus-dark border-cyrus-dark-lightest text-gray-300">
+              <DropdownMenuItem onClick={() => exportItemList(category)}>
                 <Download className="mr-2 h-4 w-4" />
                 Export Items
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={() => {
-                  setSelectedCategory(category);
+                  setSelectedCategoryForDialog(category);
                   setShowImportDialog(true);
                 }}
-                className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
+                disabled={!editMode}
               >
                 <Upload className="mr-2 h-4 w-4" />
-                Import Items
+                Import Items (JSON)
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={() => {
-                  setSelectedCategory(category);
+                  setSelectedCategoryForDialog(category);
                   setShowBatchImportDialog(true);
                 }}
-                className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
+                disabled={!editMode}
               >
                 <Upload className="mr-2 h-4 w-4" />
-                Batch Import
+                Batch Import (Text)
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           
-          {selectedItems.length > 0 && (
-            <>
               <Button 
-                variant="destructive" 
+            onClick={() => openAddItemDialog(category)} // Verwende openAddItemDialog hier
+            disabled={!editMode}
                 size="sm"
-                onClick={() => handleRemoveSelectedItems(category)}
-                className="flex items-center"
+            className="bg-cyrus-blue"
               >
-                <Trash className="mr-1 h-4 w-4" />
-                Delete ({selectedItems.length})
+            <Plus className="mr-2 h-4 w-4" /> Add Item
               </Button>
-              
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="flex items-center text-gray-300 border-cyrus-dark-lightest">
-                    <Edit className="mr-1 h-4 w-4" />
-                    Adjust
-                    <ChevronDown className="ml-1 h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="bg-cyrus-dark-lighter border-cyrus-dark-lightest">
-                  <DropdownMenuItem onClick={() => adjustProbabilities(category, 'equal')} className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200">
-                    Equal Distribution
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => adjustProbabilities(category, 'proportional')} className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200">
-                    Proportional Distribution
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => adjustProbabilities(category, 'reset')} className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200">
-                    Reset to Zero
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
-          )}
         </div>
-        
-        {selectedItems.length > 0 && (
-          <div className="w-full mt-2">
-            <Badge className="bg-cyrus-blue">
-              {selectedItems.length} items selected
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-4 w-4 ml-1" 
-                onClick={() => setSelectedItems([])}
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </Badge>
-          </div>
-        )}
       </div>
     );
   };
   
-  // Add SortableTableRow component back
-  const SortableTableRow = ({ 
+  // NEU: Komponente für ein sortierbares Grid-Item
+  const SortableGridItem = ({ 
     children, 
     id 
   }: { 
     children: React.ReactNode, 
     id: string 
   }) => {
-    const {
-      attributes,
-      listeners,
-      setNodeRef,
-      transform,
-      transition,
-      isDragging
-    } = useSortable({ id });
-
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+    
     const style = {
       transform: CSS.Transform.toString(transform),
       transition,
-      opacity: isDragging ? 0.5 : 1,
-      zIndex: isDragging ? 999 : 1,
+      zIndex: isDragging ? 10 : 'auto',
+      opacity: isDragging ? 0.8 : 1,
+      boxShadow: isDragging ? '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)' : 'none',
     };
 
     return (
-      <TableRow 
+      <div 
         ref={setNodeRef} 
         style={style} 
-        className={`border-cyrus-dark-lightest ${isDragging ? 'bg-cyrus-blue/20' : ''}`}
-        {...attributes}
-        {...listeners}
+        {...attributes} 
+        // Drag handle wird separat gerendert, daher hier nur {...attributes}
+        className={`p-3 bg-cyrus-dark rounded border border-cyrus-dark-lightest flex items-center gap-2 ${isDragging ? 'shadow-lg' : ''}`}
       >
+         {/* Drag Handle explizit rendern */} 
+         {editMode && (
+           <div {...listeners} className="cursor-grab p-1">
+             <GripVertical className="h-5 w-5 text-gray-400" /> 
+           </div>
+         )}
         {children}
-      </TableRow>
+      </div>
     );
   };
-  
-  // Erstelle eine memoized Version von renderItemTable
-  const renderItemTableMemo = useMemo(() => {
-    const renderTable = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
-      const items = filteredItemsMemo[category];
-      
-      // Handler for the end of a drag operation
-      const handleDragEnd = (event: DragEndEvent) => {
-        const { active, over } = event;
-        
-        if (!over || active.id === over.id) return;
-        
-        if (collectorData) {
-          const oldIndex = collectorData[category].findIndex(item => item.itemId === active.id);
-          const newIndex = collectorData[category].findIndex(item => item.itemId === over.id);
-          
-          const updatedItems = arrayMove([...collectorData[category]], oldIndex, newIndex);
-          
-          const updatedData = {
-            ...collectorData,
-            [category]: updatedItems
-          };
-          
-          setCollectorData(updatedData);
+
+  // Überarbeitete Funktion zum Rendern der Items als Grid
+  const renderTable = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
+    const itemsToRender = filteredItems(category);
+    
+    const handleDragEnd = (event: DragEndEvent) => {
+      const { active, over } = event;
+
+      if (active.id !== over?.id) {
+        if (!collectorData) return;
+
+        const originalItems = collectorData[category];
+        const oldIndex = originalItems.findIndex(item => item.itemId === active.id);
+        const newIndex = originalItems.findIndex(item => item.itemId === over!.id);
+
+        if (oldIndex !== -1 && newIndex !== -1) {
+            const updatedOrder = arrayMove(originalItems, oldIndex, newIndex);
+            
+            const updatedData = {
+                ...collectorData,
+                [category]: updatedOrder,
+            };
+
+            setCollectorData(updatedData);
+            toast.info("Item order updated");
         }
-      };
-      
-      // Split items into two columns
-      const halfLength = Math.ceil(items.length / 2);
-      const leftItems = items.slice(0, halfLength);
-      const rightItems = items.slice(halfLength);
-      
-      const renderItemColumn = (itemsToRender: typeof items) => {
-        return (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-cyrus-dark-lighter">
-                <TableRow>
-                  <TableHead className="w-10 sticky top-0 bg-cyrus-dark-lighter z-10">
-                    <Checkbox 
-                      checked={
-                        itemsToRender.length > 0 && 
-                        itemsToRender.every(item => selectedItems.includes(item.itemId))
-                      }
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedItems([
-                            ...selectedItems,
-                            ...itemsToRender
-                              .filter(item => !selectedItems.includes(item.itemId))
-                              .map(item => item.itemId)
-                          ]);
-                        } else {
-                          setSelectedItems(
-                            selectedItems.filter(id => 
-                              !itemsToRender.find(item => item.itemId === id)
-                            )
-                          );
-                        }
-                      }}
-                    />
-                  </TableHead>
-                  <TableHead className="w-8 sticky top-0 bg-cyrus-dark-lighter z-10"></TableHead>
-                  <TableHead className="text-gray-300 sticky top-0 bg-cyrus-dark-lighter z-10">Item ID</TableHead>
-                  <TableHead className="text-gray-300 w-28 sticky top-0 bg-cyrus-dark-lighter z-10">Probability</TableHead>
-                  <TableHead className="text-gray-300 w-24 sticky top-0 bg-cyrus-dark-lighter z-10">%</TableHead>
-                  <TableHead className="text-gray-300 w-24 sticky top-0 bg-cyrus-dark-lighter z-10">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {itemsToRender.map((item, index) => {
-                  const originalIndex = collectorData ? collectorData[category].findIndex(i => i.itemId === item.itemId) : -1;
+      }
+    };
+
+    return (
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={itemsToRender.map(item => item.itemId)} strategy={verticalListSortingStrategy}>
+          {/* Grid-Layout anstelle von Tabelle - Maximal 2 Spalten */} 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3"> {/* xl:grid-cols-3 entfernt */}
+              {itemsToRender.length === 0 ? (
+                 <p className="col-span-full text-center text-gray-400 py-8">
+                   No items found in this category {searchQuery ? 'matching your search' : ''}
+                 </p>
+              ) : (
+                itemsToRender.map((item, displayIndex) => { 
+                  const originalIndex = collectorData ? collectorData[category].findIndex(origItem => origItem.itemId === item.itemId) : -1;
+                  if (originalIndex === -1) return null; 
                   
                   return (
-                    <TableRow key={item.itemId} className="border-cyrus-dark-lightest">
-                      <TableCell>
-                        <Checkbox 
-                          checked={selectedItems.includes(item.itemId)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedItems([...selectedItems, item.itemId]);
-                            } else {
-                              setSelectedItems(selectedItems.filter(id => id !== item.itemId));
-                            }
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell className="px-2">
-                        <div className="flex flex-col h-4 justify-between">
-                          <div className="h-0.5 w-4 bg-gray-400 rounded"></div>
-                          <div className="h-0.5 w-4 bg-gray-400 rounded"></div>
-                          <div className="h-0.5 w-4 bg-gray-400 rounded"></div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-gray-300">
-                        <FormField
-                          id={`${category}-id-${originalIndex}`}
-                          label=""
-                          type="text"
-                          value={item.itemId}
-                          onChange={(value) => handleItemChange(originalIndex, 'itemId', value, category)}
-                          className="bg-cyrus-dark-lighter text-gray-300"
-                          readOnly={!editMode}
-                        />
-                      </TableCell>
-                      <TableCell className="text-gray-300">
-                        <FormField
-                          id={`${category}-prob-${originalIndex}`}
-                          label=""
-                          type="number"
-                          value={item.probability}
-                          onChange={(value) => handleItemChange(originalIndex, 'probability', parseInt(value, 10) || 0, category)}
-                          min={0}
-                          className="bg-cyrus-dark-lighter text-gray-300 [&>input]:dark-mode-number-input"
-                          error={item.probability < 0 ? "Value must be positive" : undefined}
-                          readOnly={!editMode}
-                        />
-                      </TableCell>
-                      <TableCell 
-                        className={
-                          collectorData && 
-                          collectorData[`${category}Total`] === 1000000 ? 
-                          'text-green-400' : 'text-red-400'
-                        }
-                      >
-                        {calculatePercentage(item.probability).toFixed(2)}%
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          {editMode && (
-                            <Button 
-                              variant="destructive" 
-                              size="icon"
-                              onClick={() => handleRemoveItem(originalIndex, category)}
-                            >
-                              <Trash className="h-4 w-4" />
-                            </Button>
+                    // Verwende SortableGridItem anstelle von SortableTableRow/TableCell
+                    <SortableGridItem key={item.itemId} id={item.itemId}>
+                      {/* Innere Struktur des Grid-Items - JETZT HORIZONTAL */} 
+                      <div className="flex-1 flex items-center gap-2 min-w-0"> {/* Geändert zu flex-row (Standard) und gap-2 */} 
+                        {/* Checkbox (optional) */} 
+                        {editMode && (
+                          <Checkbox
+                            className="flex-shrink-0" // Verhindert Schrumpfen
+                            checked={selectedItems.includes(item.itemId)}
+                            onCheckedChange={(checked) => {
+                              setSelectedItems(prev => 
+                                checked 
+                                  ? [...prev, item.itemId]
+                                  : prev.filter(id => id !== item.itemId)
+                              );
+                            }}
+                          />
+                        )}
+                        {/* Item ID (nimmt verfügbaren Platz ein) */} 
+                        <span className="font-mono text-xs text-gray-300 truncate flex-grow" title={item.itemId}>{item.itemId}</span>
+                        
+                        {/* Probability */} 
+                        <Label htmlFor={`prob-${item.itemId}`} className="text-xs text-gray-400 flex-shrink-0 ml-auto">Prob:</Label> {/* ml-auto für Abstand */} 
+                        {editMode ? (
+                          <Input 
+                            id={`prob-${item.itemId}`}
+                            type="number"
+                            value={item.probability}
+                            onChange={(e) => handleItemChange(originalIndex, 'probability', String(e.target.value), category)}
+                            className="h-7 text-xs text-right bg-cyrus-dark-lighter border-cyrus-dark-lightest text-gray-300 w-20 flex-shrink-0" /* Breite angepasst */
+                          />
+                        ) : (
+                          <span className="text-xs text-gray-300 w-20 text-right flex-shrink-0">{item.probability.toLocaleString()}</span> /* Breite angepasst */
+                        )}
+
+                        {/* Percentage */} 
+                        <span className="text-xs text-gray-400 w-12 text-right flex-shrink-0">
+                          {calculatePercentage(item.probability)}%
+                        </span>
+
+                         {/* Actions Dropdown */} 
+                         {editMode && (
+                           <div className="flex-shrink-0"> {/* Div für korrekte Platzierung */} 
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6">
+                                  <MoreHorizontal className="h-4 w-4 text-gray-400" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent className="bg-cyrus-dark border-cyrus-dark-lightest text-gray-300">
+                                <DropdownMenuItem onClick={() => handleDuplicateItem(originalIndex, category)}>
+                                  <Copy className="mr-2 h-4 w-4" />
+                                  Duplicate
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleRemoveItem(originalIndex, category)} className="text-red-400">
+                                  <Trash className="mr-2 h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                           </div>
                           )}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button 
-                                variant="outline" 
-                                size="icon" 
-                                className="border-cyrus-dark-lightest"
-                                disabled={!editMode}
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="bg-cyrus-dark-lighter border-cyrus-dark-lightest">
-                              <DropdownMenuItem 
-                                onClick={() => {
-                                  if (!editMode) return;
-                                  
-                                  const updatedItems = [...collectorData![category]];
-                                  updatedItems[originalIndex] = { ...updatedItems[originalIndex], probability: 1000000 };
-                                  
-                                  // Set all other items to 0
-                                  updatedItems.forEach((item, i) => {
-                                    if (i !== originalIndex) {
-                                      updatedItems[i] = { ...updatedItems[i], probability: 0 };
-                                    }
-                                  });
-                                  
-                                  const updatedData = {
-                                    ...collectorData!,
-                                    [category]: updatedItems,
-                                    [`${category}Total`]: 1000000
-                                  };
-                                  
-                                  setCollectorData(updatedData);
-                                  setValidation(validateCollectorData(updatedData));
-                                }}
-                                className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
-                                disabled={!editMode}
-                              >
-                                Set to 100%
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => handleDuplicateItem(originalIndex, category)}
-                                className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
-                                disabled={!editMode}
-                              >
-                                <Copy className="mr-2 h-4 w-4" />
-                                Duplicate Item
-                              </DropdownMenuItem>
-                              <DropdownMenuItem 
-                                onClick={() => {
-                                  navigator.clipboard.writeText(item.itemId);
-                                  toast.success("Item ID copied to clipboard");
-                                }}
-                                className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
-                              >
-                                <Copy className="mr-2 h-4 w-4" />
-                                Copy ID
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                      </div>
+                    </SortableGridItem>
                   );
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        );
-      };
-      
-      // If collectorData or hasDragAndDrop is false, show the table without DnD
-      if (!collectorData || !hasDragAndDrop) {
-        return (
-          <>
-            <ItemSearchBar category={category} />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {leftItems.length > 0 && (
-                <div>{renderItemColumn(leftItems)}</div>
+                })
               )}
-              {rightItems.length > 0 && (
-                <div>{renderItemColumn(rightItems)}</div>
+          </div>
+        </SortableContext>
+      </DndContext>
+    );
+  };
+
+
+  const renderItemTable = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
+    if (!collectorData) return <div className="text-center py-8 text-gray-400">Loading data...</div>;
+    
+    const total = collectorData[`${category}Total`];
+    // Umbenannt und geänderte Logik für Validierungsfehler
+    const itemValidationError = validation && !validation[`${category}Valid`] ? `Summe für ${category} stimmt nicht (sollte 1,000,000 sein)` : null;
+    
+        return (
+      <div className="bg-cyrus-dark-lighter border border-cyrus-dark-lightest rounded-md p-4">
+            <ItemSearchBar category={category} />
+        
+        <div className="mb-4 flex justify-between items-center">
+          <div className="text-sm text-gray-400">
+            Total Probability: {total.toLocaleString()} / 1,000,000
+          </div>
+          {itemValidationError && (
+            <Badge variant="destructive" className="flex items-center gap-1">
+              <AlertTriangle className="h-4 w-4" />
+              {itemValidationError}
+            </Badge>
               )}
             </div>
-          </>
-        );
-      }
-      
-      // With DnD, if collectorData and sensors are available
-      return (
-        <>
-          <ItemSearchBar category={category} />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {leftItems.length > 0 && (
-              <div>
-                <DndContext 
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
-                  <Table>
-                    <TableHeader className="bg-cyrus-dark-lighter">
-                      <TableRow>
-                        <TableHead className="w-10 sticky top-0 bg-cyrus-dark-lighter z-10">
-                          <Checkbox 
-                            checked={
-                              leftItems.length > 0 && 
-                              leftItems.every(item => selectedItems.includes(item.itemId))
-                            }
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setSelectedItems([
-                                  ...selectedItems,
-                                  ...leftItems
-                                    .filter(item => !selectedItems.includes(item.itemId))
-                                    .map(item => item.itemId)
-                                ]);
-                              } else {
-                                setSelectedItems(
-                                  selectedItems.filter(id => 
-                                    !leftItems.find(item => item.itemId === id)
-                                  )
-                                );
-                              }
-                            }}
-                          />
-                        </TableHead>
-                        <TableHead className="w-8 sticky top-0 bg-cyrus-dark-lighter z-10"></TableHead>
-                        <TableHead className="text-gray-300 sticky top-0 bg-cyrus-dark-lighter z-10">Item ID</TableHead>
-                        <TableHead className="text-gray-300 w-28 sticky top-0 bg-cyrus-dark-lighter z-10">Probability</TableHead>
-                        <TableHead className="text-gray-300 w-24 sticky top-0 bg-cyrus-dark-lighter z-10">%</TableHead>
-                        <TableHead className="text-gray-300 w-24 sticky top-0 bg-cyrus-dark-lighter z-10">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      <SortableContext 
-                        items={leftItems.map(item => item.itemId)} 
-                        strategy={verticalListSortingStrategy}
-                      >
-                        {leftItems.map((item) => {
-                          const originalIndex = collectorData ? collectorData[category].findIndex(i => i.itemId === item.itemId) : -1;
-                          
-                          return (
-                            <SortableTableRow key={item.itemId} id={item.itemId}>
-                              <TableCell>
-                                <Checkbox 
-                                  checked={selectedItems.includes(item.itemId)}
-                                  onCheckedChange={(checked) => {
-                                    if (checked) {
-                                      setSelectedItems([...selectedItems, item.itemId]);
-                                    } else {
-                                      setSelectedItems(selectedItems.filter(id => id !== item.itemId));
-                                    }
-                                  }}
-                                />
-                              </TableCell>
-                              <TableCell className="cursor-grab px-2">
-                                <div className="flex flex-col h-4 justify-between">
-                                  <div className="h-0.5 w-4 bg-gray-400 rounded"></div>
-                                  <div className="h-0.5 w-4 bg-gray-400 rounded"></div>
-                                  <div className="h-0.5 w-4 bg-gray-400 rounded"></div>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-gray-300">
-                                <FormField
-                                  id={`${category}-id-${originalIndex}`}
-                                  label=""
-                                  type="text"
-                                  value={item.itemId}
-                                  onChange={(value) => handleItemChange(originalIndex, 'itemId', value, category)}
-                                  className="bg-cyrus-dark-lighter text-gray-300"
-                                  readOnly={!editMode}
-                                />
-                              </TableCell>
-                              <TableCell className="text-gray-300">
-                                <FormField
-                                  id={`${category}-prob-${originalIndex}`}
-                                  label=""
-                                  type="number"
-                                  value={item.probability}
-                                  onChange={(value) => handleItemChange(originalIndex, 'probability', parseInt(value, 10) || 0, category)}
-                                  min={0}
-                                  className="bg-cyrus-dark-lighter text-gray-300 [&>input]:dark-mode-number-input"
-                                  error={item.probability < 0 ? "Value must be positive" : undefined}
-                                  readOnly={!editMode}
-                                />
-                              </TableCell>
-                              <TableCell 
-                                className={
-                                  collectorData && 
-                                  collectorData[`${category}Total`] === 1000000 ? 
-                                  'text-green-400' : 'text-red-400'
-                                }
-                              >
-                                {calculatePercentage(item.probability).toFixed(2)}%
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex gap-1">
-                                  {editMode && (
-                                    <Button 
-                                      variant="destructive" 
-                                      size="icon"
-                                      onClick={() => handleRemoveItem(originalIndex, category)}
-                                    >
-                                      <Trash className="h-4 w-4" />
-                                    </Button>
-                                  )}
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button 
-                                        variant="outline" 
-                                        size="icon" 
-                                        className="border-cyrus-dark-lightest"
-                                        disabled={!editMode}
-                                      >
-                                        <MoreHorizontal className="h-4 w-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="bg-cyrus-dark-lighter border-cyrus-dark-lightest">
-                                      <DropdownMenuItem 
-                                        onClick={() => {
-                                          if (!editMode) return;
-                                          
-                                          const updatedItems = [...collectorData![category]];
-                                          updatedItems[originalIndex] = { ...updatedItems[originalIndex], probability: 1000000 };
-                                          
-                                          // Set all other items to 0
-                                          updatedItems.forEach((item, i) => {
-                                            if (i !== originalIndex) {
-                                              updatedItems[i] = { ...updatedItems[i], probability: 0 };
-                                            }
-                                          });
-                                          
-                                          const updatedData = {
-                                            ...collectorData!,
-                                            [category]: updatedItems,
-                                            [`${category}Total`]: 1000000
-                                          };
-                                          
-                                          setCollectorData(updatedData);
-                                          setValidation(validateCollectorData(updatedData));
-                                        }}
-                                        className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
-                                        disabled={!editMode}
-                                      >
-                                        Set to 100%
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem 
-                                        onClick={() => handleDuplicateItem(originalIndex, category)}
-                                        className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
-                                        disabled={!editMode}
-                                      >
-                                        <Copy className="mr-2 h-4 w-4" />
-                                        Duplicate Item
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem 
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(item.itemId);
-                                          toast.success("Item ID copied to clipboard");
-                                        }}
-                                        className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
-                                      >
-                                        <Copy className="mr-2 h-4 w-4" />
-                                        Copy ID
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              </TableCell>
-                            </SortableTableRow>
-                          );
-                        })}
-                      </SortableContext>
-                    </TableBody>
-                  </Table>
-                </DndContext>
-              </div>
-            )}
-            
-            {rightItems.length > 0 && (
-              <div>
-                <DndContext 
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
-                  <Table>
-                    <TableHeader className="bg-cyrus-dark-lighter">
-                      <TableRow>
-                        <TableHead className="w-10 sticky top-0 bg-cyrus-dark-lighter z-10">
-                          <Checkbox 
-                            checked={
-                              rightItems.length > 0 && 
-                              rightItems.every(item => selectedItems.includes(item.itemId))
-                            }
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setSelectedItems([
-                                  ...selectedItems,
-                                  ...rightItems
-                                    .filter(item => !selectedItems.includes(item.itemId))
-                                    .map(item => item.itemId)
-                                ]);
-                              } else {
-                                setSelectedItems(
-                                  selectedItems.filter(id => 
-                                    !rightItems.find(item => item.itemId === id)
-                                  )
-                                );
-                              }
-                            }}
-                          />
-                        </TableHead>
-                        <TableHead className="w-8 sticky top-0 bg-cyrus-dark-lighter z-10"></TableHead>
-                        <TableHead className="text-gray-300 sticky top-0 bg-cyrus-dark-lighter z-10">Item ID</TableHead>
-                        <TableHead className="text-gray-300 w-28 sticky top-0 bg-cyrus-dark-lighter z-10">Probability</TableHead>
-                        <TableHead className="text-gray-300 w-24 sticky top-0 bg-cyrus-dark-lighter z-10">%</TableHead>
-                        <TableHead className="text-gray-300 w-24 sticky top-0 bg-cyrus-dark-lighter z-10">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      <SortableContext 
-                        items={rightItems.map(item => item.itemId)} 
-                        strategy={verticalListSortingStrategy}
-                      >
-                        {rightItems.map((item) => {
-                          const originalIndex = collectorData ? collectorData[category].findIndex(i => i.itemId === item.itemId) : -1;
-                          
-                          return (
-                            <SortableTableRow key={item.itemId} id={item.itemId}>
-                              <TableCell>
-                                <Checkbox 
-                                  checked={selectedItems.includes(item.itemId)}
-                                  onCheckedChange={(checked) => {
-                                    if (checked) {
-                                      setSelectedItems([...selectedItems, item.itemId]);
-                                    } else {
-                                      setSelectedItems(selectedItems.filter(id => id !== item.itemId));
-                                    }
-                                  }}
-                                />
-                              </TableCell>
-                              <TableCell className="cursor-grab px-2">
-                                <div className="flex flex-col h-4 justify-between">
-                                  <div className="h-0.5 w-4 bg-gray-400 rounded"></div>
-                                  <div className="h-0.5 w-4 bg-gray-400 rounded"></div>
-                                  <div className="h-0.5 w-4 bg-gray-400 rounded"></div>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-gray-300">
-                                <FormField
-                                  id={`${category}-id-${originalIndex}`}
-                                  label=""
-                                  type="text"
-                                  value={item.itemId}
-                                  onChange={(value) => handleItemChange(originalIndex, 'itemId', value, category)}
-                                  className="bg-cyrus-dark-lighter text-gray-300"
-                                  readOnly={!editMode}
-                                />
-                              </TableCell>
-                              <TableCell className="text-gray-300">
-                                <FormField
-                                  id={`${category}-prob-${originalIndex}`}
-                                  label=""
-                                  type="number"
-                                  value={item.probability}
-                                  onChange={(value) => handleItemChange(originalIndex, 'probability', parseInt(value, 10) || 0, category)}
-                                  min={0}
-                                  className="bg-cyrus-dark-lighter text-gray-300 [&>input]:dark-mode-number-input"
-                                  error={item.probability < 0 ? "Value must be positive" : undefined}
-                                  readOnly={!editMode}
-                                />
-                              </TableCell>
-                              <TableCell 
-                                className={
-                                  collectorData && 
-                                  collectorData[`${category}Total`] === 1000000 ? 
-                                  'text-green-400' : 'text-red-400'
-                                }
-                              >
-                                {calculatePercentage(item.probability).toFixed(2)}%
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex gap-1">
-                                  {editMode && (
-                                    <Button 
-                                      variant="destructive" 
-                                      size="icon"
-                                      onClick={() => handleRemoveItem(originalIndex, category)}
-                                    >
-                                      <Trash className="h-4 w-4" />
-                                    </Button>
-                                  )}
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button 
-                                        variant="outline" 
-                                        size="icon" 
-                                        className="border-cyrus-dark-lightest"
-                                        disabled={!editMode}
-                                      >
-                                        <MoreHorizontal className="h-4 w-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="bg-cyrus-dark-lighter border-cyrus-dark-lightest">
-                                      <DropdownMenuItem 
-                                        onClick={() => {
-                                          if (!editMode) return;
-                                          
-                                          const updatedItems = [...collectorData![category]];
-                                          updatedItems[originalIndex] = { ...updatedItems[originalIndex], probability: 1000000 };
-                                          
-                                          // Set all other items to 0
-                                          updatedItems.forEach((item, i) => {
-                                            if (i !== originalIndex) {
-                                              updatedItems[i] = { ...updatedItems[i], probability: 0 };
-                                            }
-                                          });
-                                          
-                                          const updatedData = {
-                                            ...collectorData!,
-                                            [category]: updatedItems,
-                                            [`${category}Total`]: 1000000
-                                          };
-                                          
-                                          setCollectorData(updatedData);
-                                          setValidation(validateCollectorData(updatedData));
-                                        }}
-                                        className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
-                                        disabled={!editMode}
-                                      >
-                                        Set to 100%
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem 
-                                        onClick={() => handleDuplicateItem(originalIndex, category)}
-                                        className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
-                                        disabled={!editMode}
-                                      >
-                                        <Copy className="mr-2 h-4 w-4" />
-                                        Duplicate Item
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem 
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(item.itemId);
-                                          toast.success("Item ID copied to clipboard");
-                                        }}
-                                        className="text-gray-300 focus:bg-cyrus-dark focus:text-gray-200"
-                                      >
-                                        <Copy className="mr-2 h-4 w-4" />
-                                        Copy ID
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              </TableCell>
-                            </SortableTableRow>
-                          );
-                        })}
-                      </SortableContext>
-                    </TableBody>
-                  </Table>
-                </DndContext>
-              </div>
-            )}
-          </div>
-        </>
-      );
-    };
-    
-    return {
-      items: () => renderTable('items'),
-      premiumItems: () => renderTable('premiumItems'),
-      premiumStatusItems: () => renderTable('premiumStatusItems')
-    };
-  }, [collectorData, selectedItems, filteredItemsMemo, hasDragAndDrop, sensors]);
+        
+        <div className="rounded-md border border-cyrus-dark-lightest overflow-hidden">
+          {renderTable(category)}
+        </div>
+        
+        <div className="mt-4">
+          <ProbabilityChart category={category} />
+        </div>
+      </div>
+    );
+  };
 
-  // Function to filter items based on the search
-  const filteredItems = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
-    return filteredItemsMemo[category];
-  };
-  
-  // Updated renderItemTable function that uses the memoized version
-  const renderItemTable = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
-    return renderItemTableMemo[category]();
-  };
-  
-  // Render the save button with conditional rendering based on editMode
-  const renderSaveButton = () => {
-    if (!editMode) return null; // Don't show save button in view mode
+  const renderEnchantTable = () => {
+    if (!collectorData) return <div className="text-center py-8 text-gray-400">Loading data...</div>;
     
+    const total = collectorData.enchantTotal;
+    // Umbenannt und geänderte Logik für Validierungsfehler
+    const enchantValidationError = validation && !validation.enchantValid ? "Summe für Enchant stimmt nicht (sollte 1,000,000 sein)" : null;
+                          
+                          return (
+      <Card className="bg-cyrus-dark-lighter border border-cyrus-dark-lightest">
+        <CardHeader>
+          <CardTitle className="text-gray-200">Enchant Chances</CardTitle>
+          <CardDescription className="text-gray-400">
+            Configure the probability for each enchant level.
+          </CardDescription>
+           <div className="flex items-center justify-between mt-2">
+             <div className="text-sm text-gray-400">
+                Total Probability: {total.toLocaleString()} / 1,000,000
+                                </div>
+             {enchantValidationError && (
+                <Badge variant="destructive" className="flex items-center gap-1">
+                  <AlertTriangle className="h-4 w-4" />
+                  {enchantValidationError}
+                </Badge>
+              )}
+              <div className="flex gap-2">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="text-gray-300 border-cyrus-dark-lightest">
+                      Distribute Probability
+                      <ChevronDown className="ml-2 h-4 w-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                  <DropdownMenuContent className="bg-cyrus-dark border-cyrus-dark-lightest text-gray-300">
+                    <DropdownMenuItem onClick={() => adjustEnchantProbabilities('equal')} disabled={!editMode}>
+                      Distribute Equally
+                                      </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => adjustEnchantProbabilities('proportional')} disabled={!editMode}>
+                      Adjust Proportionally
+                                      </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => adjustEnchantProbabilities('reset')} disabled={!editMode}>
+                      Reset to 0
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                <Button onClick={handleAddEnchant} disabled={!editMode} size="sm" className="bg-cyrus-blue">
+                  <Plus className="mr-2 h-4 w-4" /> Add Enchant Level
+                </Button>
+                                </div>
+              </div>
+        </CardHeader>
+        <CardContent>
+                  <Table>
+            <TableHeader>
+                      <TableRow>
+                <TableHead className="w-1/3 text-gray-300">Enchant Level</TableHead>
+                <TableHead className="w-1/3 text-gray-300">Chance (out of 1,000,000)</TableHead>
+                <TableHead className="w-1/3 text-right text-gray-300">Percentage</TableHead>
+                {editMode && (
+                  <TableHead className="w-20 text-center text-gray-300">Actions</TableHead>
+                )}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+              {collectorData.enchant.map((enchant, index) => (
+                <TableRow key={`${enchant.level}-${index}`} className="border-b border-cyrus-dark-lightest">
+                              <TableCell>
+                    {editMode ? (
+                      <Input 
+                        type="number"
+                        value={enchant.level}
+                        onChange={(e) => handleEnchantLevelChange(index, parseInt(e.target.value, 10))}
+                        className="w-24 bg-cyrus-dark-lighter border-cyrus-dark-lightest text-gray-300"
+                      />
+                    ) : (
+                      <span className="text-gray-300">+{enchant.level}</span>
+                    )}
+                              </TableCell>
+                  <TableCell>
+                    {editMode ? (
+                      <Input 
+                                  type="number"
+                        value={enchant.chance}
+                        onChange={(e) => handleEnchantChange(index, parseInt(e.target.value, 10))}
+                        className="w-32 bg-cyrus-dark-lighter border-cyrus-dark-lightest text-gray-300"
+                      />
+                    ) : (
+                       <span className="text-gray-300">{enchant.chance.toLocaleString()}</span>
+                    )}
+                              </TableCell>
+                  <TableCell className="text-right text-gray-400">
+                    {calculatePercentage(enchant.chance)}%
+                              </TableCell>
+                                  {editMode && (
+                    <TableCell className="text-center">
+                      <Button variant="ghost" size="icon" onClick={() => handleRemoveEnchant(index)} className="h-8 w-8">
+                        <Trash className="h-4 w-4 text-red-400" />
+                                    </Button>
+                              </TableCell>
+                  )}
+                </TableRow>
+              ))}
+                    </TableBody>
+                  </Table>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderSaveButton = () => {
+    if (!editMode) return null;
     return (
-      <Button 
-        onClick={handleSave} 
-        className="bg-cyrus-blue hover:bg-cyrus-blue/90 text-white flex gap-1"
-        disabled={!collectorData}
-      >
-        <Save className="h-4 w-4" />
-        Save Changes
+        <Button onClick={handleSave} className="mt-4 bg-cyrus-blue">
+          <Save className="mr-2 h-4 w-4" /> Save Changes
       </Button>
     );
   };
+
+  // --- Haupt-JSX der Komponente --- 
+
+  console.log("[CollectorTab] Haupt-Render. Verfügbare Items State Länge:", availableItems.length);
   
   if (!collectorData) {
-    return <div className="flex justify-center items-center p-12 text-gray-300">Loading collector data...</div>;
+    return <div className="p-4 text-center text-gray-400">Loading Collector data...</div>;
   }
   
   return (
-    <div className="collector-tab w-full h-full overflow-auto bg-cyrus-dark">
-      <div className="sticky top-0 z-20 bg-cyrus-dark p-4 pb-0 border-b border-cyrus-dark-lightest mb-4">
-        <div className="flex justify-between mb-4">
-          <h2 className="text-2xl font-bold text-cyrus-gold">Collector Configuration</h2>
-          <div className="flex gap-2">
-            {renderSaveButton()}
-          </div>
-        </div>
-        
-        {/* Display validation warnings */}
-        {validation && !validation.isValid && (
-          <Card className="mb-4 border-destructive bg-destructive/10">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center text-destructive">
-                <AlertTriangle className="mr-2 h-5 w-5" />
-                Errors in Collector Data
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <ul className="list-disc pl-5">
-                {validation.errors.map((error, index) => (
-                  <li key={index} className="text-destructive">{error}</li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-      
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div className="px-4 mb-4 sticky top-[72px] z-10 bg-cyrus-dark">
-          <TabsList className="w-full justify-start bg-cyrus-dark-lighter">
-            <TabsTrigger 
-              value="enchant" 
-              className="data-[state=active]:bg-cyrus-blue data-[state=active]:text-white text-gray-300"
-            >
-              Enchantment {!validation?.enchantValid && <AlertTriangle className="ml-2 h-4 w-4 text-destructive" />}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="items" 
-              className="data-[state=active]:bg-cyrus-blue data-[state=active]:text-white text-gray-300"
-            >
-              Items {!validation?.itemsValid && <AlertTriangle className="ml-2 h-4 w-4 text-destructive" />}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="premiumItems" 
-              className="data-[state=active]:bg-cyrus-blue data-[state=active]:text-white text-gray-300"
-            >
-              Premium Items {!validation?.premiumItemsValid && <AlertTriangle className="ml-2 h-4 w-4 text-destructive" />}
-            </TabsTrigger>
-            <TabsTrigger 
-              value="premiumStatusItems" 
-              className="data-[state=active]:bg-cyrus-blue data-[state=active]:text-white text-gray-300"
-            >
-              Premium Status Items {!validation?.premiumStatusItemsValid && <AlertTriangle className="ml-2 h-4 w-4 text-destructive" />}
-            </TabsTrigger>
-          </TabsList>
-        </div>
-        
-        <div className="px-4 pb-4">
-          {/* Enchant Tab */}
-          <TabsContent value="enchant" className="mt-0">
-            <Card className="bg-cyrus-dark-light border-cyrus-dark-lightest">
-              <CardHeader className="bg-cyrus-dark-lighter border-b border-cyrus-dark-lightest sticky top-[121px] z-10">
-                <div className="flex justify-between items-center">
-                  <CardTitle className="text-gray-200">Enchantment Probabilities</CardTitle>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => distributeEnchantEvenly()}
-                    className="text-xs text-gray-300 border-cyrus-dark-lightest bg-cyrus-dark hover:bg-cyrus-dark-light"
-                  >
-                    Distribute Evenly
-                  </Button>
-                </div>
-                <CardDescription className="text-gray-400">
-                  Configure the probabilities for each enchantment level. Total should be 1000.
-                  Current: {collectorData.enchantTotal.toLocaleString()}/1000
-                  {collectorData.enchantTotal !== 1000 && (
-                    <span className="text-destructive"> (Invalid)</span>
-                  )}
-                </CardDescription>
-              </CardHeader>
-
-              <CardContent className="p-0">
-                <div className="p-4">
-                  <Button onClick={handleAddEnchant} className="flex items-center bg-cyrus-blue hover:bg-cyrus-blue/90">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Enchantment
-                  </Button>
-                </div>
-                <div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-cyrus-dark-lighter">
-                        <TableHead className="w-[80px] sticky top-0 bg-cyrus-dark-lighter z-10 text-gray-300">Level</TableHead>
-                        <TableHead className="w-[120px] sticky top-0 bg-cyrus-dark-lighter z-10 text-gray-300">Probability</TableHead>
-                        <TableHead className="w-[80px] sticky top-0 bg-cyrus-dark-lighter z-10 text-gray-300">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {collectorData.enchant.map((enchant, index) => (
-                        <TableRow key={index} className="border-cyrus-dark-lightest">
-                          <TableCell className="text-gray-300">
-                            <FormField
-                              id={`enchant-level-${index}`}
-                              label=""
-                              type="number"
-                              value={enchant.level}
-                              onChange={(value) => handleEnchantLevelChange(index, parseInt(value, 10) || 0)}
-                              className="w-20 bg-cyrus-dark-lighter text-gray-300 [&>input]:dark-mode-number-input"
-                              min={0}
-                              error={undefined}
-                            />
-                          </TableCell>
-                          <TableCell className="text-gray-300">
-                            <div className="flex items-center space-x-2 w-full">
-                              <FormField
-                                id={`enchant-${index}`}
-                                label=""
-                                type="number"
-                                value={enchant.chance}
-                                onChange={(value) => handleEnchantChange(index, parseInt(value, 10) || 0)}
-                                className="w-24 bg-cyrus-dark-lighter text-gray-300"
-                                min={0}
-                                max={1000}
-                                error={enchant.chance < 0 ? "Value must be positive" : undefined}
-                                readOnly={!editMode}
-                              />
-                              <div className="flex-1 flex items-center gap-2 py-2 px-3 bg-cyrus-dark-light rounded-md">
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="1000"
-                                  value={enchant.chance}
-                                  onChange={(e) => handleEnchantChange(index, parseInt(e.target.value, 10) || 0)}
-                                  disabled={!editMode}
-                                  className="w-full h-2 bg-cyrus-dark-lighter rounded-lg appearance-none cursor-pointer"
-                                  style={{
-                                    backgroundImage: `linear-gradient(to right, #007BFF ${enchant.chance/10}%, #2D2D30 ${enchant.chance/10}%)`
-                                  }}
-                                />
-                                <div className="bg-cyrus-dark-lighter rounded-md px-2 py-1 min-w-[60px] text-center text-gray-300">
-                                  {enchant.chance}/1000
-                                </div>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Button 
-                              variant="destructive" 
-                              size="icon"
-                              onClick={() => handleRemoveEnchant(index)}
-                            >
-                              <Trash className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-          
-          {/* Items Tab - Two Column Layout */}
-          <TabsContent value="items" className="mt-0">
-            <Card className="bg-cyrus-dark-light border-cyrus-dark-lightest mb-4">
-              <CardHeader className="bg-cyrus-dark-lighter border-b border-cyrus-dark-lightest sticky top-[121px] z-10">
-                <div className="flex justify-between items-center">
-                  <CardTitle className="text-gray-200">Collector Items</CardTitle>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => distributeEvenly('items')}
-                    className="text-xs text-gray-300 border-cyrus-dark-lightest bg-cyrus-dark hover:bg-cyrus-dark-light"
-                  >
-                    Distribute Evenly
-                  </Button>
-                </div>
-                <CardDescription className="text-gray-400">
-                  Configure the probabilities for collector items. Total should be 1,000,000 (100%).
-                  Current: {collectorData.itemsTotal.toLocaleString()}/1,000,000 
-                  ({(collectorData.itemsTotal / 1000000 * 100).toFixed(2)}%)
-                  {collectorData.itemsTotal !== 1000000 && (
-                    <span className="text-destructive"> (Invalid)</span>
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <div className="mb-4">
-                  <Button variant="add" onClick={() => handleAddItem('items')} className="flex items-center text-white">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Item
-                  </Button>
-                </div>
-                <div>
-                  {renderItemTable('items')}
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-cyrus-dark-light border-cyrus-dark-lightest mb-4">
-              <CardHeader className="bg-cyrus-dark-lighter border-b border-cyrus-dark-lightest">
-                <CardTitle className="text-gray-200">Probability Distribution</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <ProbabilityChart category="items" />
-              </CardContent>
-            </Card>
-          </TabsContent>
-          
-          {/* Premium Items Tab - Two Column Layout */}
-          <TabsContent value="premiumItems" className="mt-0">
-            <Card className="bg-cyrus-dark-light border-cyrus-dark-lightest mb-4">
-              <CardHeader className="bg-cyrus-dark-lighter border-b border-cyrus-dark-lightest sticky top-[121px] z-10">
-                <div className="flex justify-between items-center">
-                  <CardTitle className="text-gray-200">Premium Items</CardTitle>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => distributeEvenly('premiumItems')}
-                    className="text-xs text-gray-300 border-cyrus-dark-lightest bg-cyrus-dark hover:bg-cyrus-dark-light"
-                  >
-                    Distribute Evenly
-                  </Button>
-                </div>
-                <CardDescription className="text-gray-400">
-                  Configure the probabilities for premium items. Total should be 1,000,000 (100%).
-                  Current: {collectorData.premiumItemsTotal.toLocaleString()}/1,000,000
-                  ({(collectorData.premiumItemsTotal / 1000000 * 100).toFixed(2)}%)
-                  {collectorData.premiumItemsTotal !== 1000000 && (
-                    <span className="text-destructive"> (Invalid)</span>
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <div className="mb-4">
-                  <Button onClick={() => handleAddItem('premiumItems')} className="flex items-center bg-cyrus-blue hover:bg-cyrus-blue/90">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Premium Item
-                  </Button>
-                </div>
-                <div>
-                  {renderItemTable('premiumItems')}
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-cyrus-dark-light border-cyrus-dark-lightest mb-4">
-              <CardHeader className="bg-cyrus-dark-lighter border-b border-cyrus-dark-lightest">
-                <CardTitle className="text-gray-200">Probability Distribution</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <ProbabilityChart category="premiumItems" />
-              </CardContent>
-            </Card>
-          </TabsContent>
-          
-          {/* Premium Status Items Tab - Two Column Layout */}
-          <TabsContent value="premiumStatusItems" className="mt-0">
-            <Card className="bg-cyrus-dark-light border-cyrus-dark-lightest mb-4">
-              <CardHeader className="bg-cyrus-dark-lighter border-b border-cyrus-dark-lightest sticky top-[121px] z-10">
-                <div className="flex justify-between items-center">
-                  <CardTitle className="text-gray-200">Premium Status Items</CardTitle>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => distributeEvenly('premiumStatusItems')}
-                    className="text-xs text-gray-300 border-cyrus-dark-lightest bg-cyrus-dark hover:bg-cyrus-dark-light"
-                  >
-                    Distribute Evenly
-                  </Button>
-                </div>
-                <CardDescription className="text-gray-400">
-                  Configure the probabilities for premium status items. Total should be 1,000,000 (100%).
-                  Current: {collectorData.premiumStatusItemsTotal.toLocaleString()}/1,000,000
-                  ({(collectorData.premiumStatusItemsTotal / 1000000 * 100).toFixed(2)}%)
-                  {collectorData.premiumStatusItemsTotal !== 1000000 && (
-                    <span className="text-destructive"> (Invalid)</span>
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <div className="mb-4">
-                  <Button onClick={() => handleAddItem('premiumStatusItems')} className="flex items-center bg-cyrus-blue hover:bg-cyrus-blue/90">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Premium Status Item
-                  </Button>
-                </div>
-                <div>
-                  {renderItemTable('premiumStatusItems')}
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-cyrus-dark-light border-cyrus-dark-lightest mb-4">
-              <CardHeader className="bg-cyrus-dark-lighter border-b border-cyrus-dark-lightest">
-                <CardTitle className="text-gray-200">Probability Distribution</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <ProbabilityChart category="premiumStatusItems" />
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </div>
-      </Tabs>
-      
-      <ItemSearchDialog />
+    <div className="p-4 bg-cyrus-dark text-white">
+      {/* Dialogs müssen außerhalb der Tabs gerendert werden, um Zustandsprobleme zu vermeiden */}
+      <AddItemDialog /> 
       <ImportDialog
         isOpen={showImportDialog}
         onClose={() => setShowImportDialog(false)}
-        category={selectedCategory}
+        category={selectedCategoryForDialog}
       />
       <BatchImportDialog
         isOpen={showBatchImportDialog}
         onClose={() => setShowBatchImportDialog(false)}
-        category={selectedCategory}
+        category={selectedCategoryForDialog}
       />
+      
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-4">
+        <TabsList className="bg-cyrus-dark-lighter border border-cyrus-dark-lightest">
+          <TabsTrigger value="enchant" className="data-[state=active]:bg-cyrus-blue data-[state=active]:text-white text-gray-300">Enchant</TabsTrigger>
+          <TabsTrigger value="items" className="data-[state=active]:bg-cyrus-blue data-[state=active]:text-white text-gray-300">Items</TabsTrigger>
+          <TabsTrigger value="premiumItems" className="data-[state=active]:bg-cyrus-blue data-[state=active]:text-white text-gray-300">Premium Items</TabsTrigger>
+          <TabsTrigger value="premiumStatusItems" className="data-[state=active]:bg-cyrus-blue data-[state=active]:text-white text-gray-300">Premium Status Items</TabsTrigger>
+          </TabsList>
+        
+        <TabsContent value="enchant">
+          {renderEnchantTable()}
+          </TabsContent>
+          
+        <TabsContent value="items">
+                  {renderItemTable('items')}
+          </TabsContent>
+          
+        <TabsContent value="premiumItems">
+                  {renderItemTable('premiumItems')}
+          </TabsContent>
+          
+        <TabsContent value="premiumStatusItems">
+                  {renderItemTable('premiumStatusItems')}
+          </TabsContent>
+      </Tabs>
+      
+      {renderSaveButton()}
     </div>
   );
 };
