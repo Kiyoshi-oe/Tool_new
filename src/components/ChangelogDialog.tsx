@@ -73,6 +73,24 @@ const ChangelogDialog = ({ open, onOpenChange }: ChangelogDialogProps) => {
           </div>
         </div>
         
+        {/* Version 1.2.5 */}
+        <div className="space-y-4 mb-8">
+          <div className="flex items-center gap-2">
+            <h3 className="text-xl font-semibold text-cyrus-blue">Version 1.2.5</h3>
+            <span className="text-sm text-gray-400">- 2024-07-02</span>
+          </div>
+          <div className="space-y-2">
+            <BulletPoint type="changed" text="Converted table layout to a compact grid layout in the Collecting tab" />
+            <BulletPoint type="added" text="Implemented SortableGridItem component for drag-and-drop functionality in grid format" />
+            <BulletPoint type="improved" text="Optimized item display with two-column layout for better space efficiency" />
+            <BulletPoint type="changed" text="Redesigned probability fields to display inline with item names" />
+            <BulletPoint type="fixed" text="Resolved data loading issues by passing availableItems directly through component hierarchy" />
+            <BulletPoint type="improved" text="Enhanced layout of collection items for better visualization and reduced scrolling" />
+            <BulletPoint type="fixed" text="Removed erroneous references to NPCTab causing linter errors" />
+            <BulletPoint type="improved" text="Streamlined styling with consistent width constraints for probability inputs" />
+          </div>
+        </div>
+        
         {/* Version 1.2.4 */}
         <div className="space-y-4 mb-8">
           <div className="flex items-center gap-2">
