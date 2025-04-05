@@ -63,7 +63,7 @@ export const getNPCsFromPropMover = async (): Promise<NPCItem[]> => {
     // If propMover.txt is not available, return demo NPCs
     if (!propMoverText) {
       console.warn("propMover.txt not found, returning demo NPCs");
-      return generateDemoNPCs();
+      return []; // Return empty array instead of demo NPCs
     }
     
     // Load remaining files with fallbacks for missing files
@@ -81,12 +81,17 @@ export const getNPCsFromPropMover = async (): Promise<NPCItem[]> => {
     const characterIncData = characterIncText ? parseCharacterInc(characterIncText) : {};
     const propMoverExData = propMoverExText ? parsePropMoverEx(propMoverExText) : {};
     
+    if (Object.keys(defineObjData).length === 0) {
+      console.warn('define.obj not loaded or empty, returning demo NPCs');
+      return []; // Return empty array instead of demo NPCs
+    }
+    
     // Merge data into a usable NPC list
     const npcs = mergeNpcData(propMoverData, propMoverTxtData, defineObjData, characterIncData, propMoverExData);
     
     if (npcs.length === 0) {
       console.warn("No NPCs found in propMover.txt, returning demo NPCs");
-      return generateDemoNPCs();
+      return []; // Return empty array instead of demo NPCs
     }
     
     // Load dialogues and shop data for each NPC
@@ -135,8 +140,8 @@ export const getNPCsFromPropMover = async (): Promise<NPCItem[]> => {
     return npcsWithExtras;
   } catch (error) {
     console.error('Error loading NPC files:', error);
-    console.warn('Returning demo NPCs due to error');
-    return generateDemoNPCs();
+    console.warn('Resource files not found or incomplete, returning demo NPCs');
+    return []; // Return empty array instead of demo NPCs
   }
 };
 
@@ -510,8 +515,9 @@ export const savePropMoverFile = async (content: string, fileName: string = "pro
 };
 
 /**
- * Generate demo NPCs for development and testing
+ * Generate demo NPCs for development and testing - REMOVING THIS
  */
+/*
 const generateDemoNPCs = (): NPCItem[] => {
   const demoNPCs: NPCItem[] = [
     {
@@ -620,3 +626,4 @@ const generateDemoNPCs = (): NPCItem[] => {
   
   return demoNPCs;
 }; 
+*/ 

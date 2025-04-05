@@ -59,7 +59,7 @@ const CollectorTab: React.FC<CollectorTabProps> = ({
   const [selectedCategoryForDialog, setSelectedCategoryForDialog] = useState<'items' | 'premiumItems' | 'premiumStatusItems'>('items');
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showBatchImportDialog, setShowBatchImportDialog] = useState(false);
-  
+
   // Define sensors for DnD correctly, without calling useSensors inside useMemo
   const pointerSensor = useSensor(PointerSensor, {
     activationConstraint: {
@@ -469,20 +469,20 @@ const CollectorTab: React.FC<CollectorTabProps> = ({
     const handleConfirmAddItem = () => {
       if (!collectorData || !editMode || !newItemId.trim()) {
         toast.error("Item ID darf nicht leer sein.");
-        return;
-      }
-      
+      return;
+    }
+    
       const newItem: CollectingItem = { itemId: newItemId, probability: newItemProbability };
       const updatedItems = [...collectorData[selectedCategoryForDialog], newItem];
-      
-      const updatedData = {
-        ...collectorData,
+    
+    const updatedData = {
+      ...collectorData,
         [selectedCategoryForDialog]: updatedItems,
         [`${selectedCategoryForDialog}Total`]: updatedItems.reduce((sum, item) => sum + item.probability, 0)
-      };
-      
-      setCollectorData(updatedData);
-      setValidation(validateCollectorData(updatedData));
+    };
+    
+    setCollectorData(updatedData);
+    setValidation(validateCollectorData(updatedData));
       setShowAddItemDialog(false);
       setNewItemId(""); // Reset Dialog state
       setNewItemProbability(0);
@@ -1038,7 +1038,7 @@ const CollectorTab: React.FC<CollectorTabProps> = ({
     id: string 
   }) => {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-    
+
     const style = {
       transform: CSS.Transform.toString(transform),
       transition,
@@ -1051,7 +1051,7 @@ const CollectorTab: React.FC<CollectorTabProps> = ({
       <div 
         ref={setNodeRef} 
         style={style} 
-        {...attributes} 
+        {...attributes}
         // Drag handle wird separat gerendert, daher hier nur {...attributes}
         className={`p-3 bg-cyrus-dark rounded border border-cyrus-dark-lightest flex items-center gap-2 ${isDragging ? 'shadow-lg' : ''}`}
       >
@@ -1065,14 +1065,14 @@ const CollectorTab: React.FC<CollectorTabProps> = ({
       </div>
     );
   };
-
+  
   // Überarbeitete Funktion zum Rendern der Items als Grid
-  const renderTable = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
+    const renderTable = (category: 'items' | 'premiumItems' | 'premiumStatusItems') => {
     const itemsToRender = filteredItems(category);
-    
-    const handleDragEnd = (event: DragEndEvent) => {
-      const { active, over } = event;
-
+      
+      const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        
       if (active.id !== over?.id) {
         if (!collectorData) return;
 
@@ -1082,19 +1082,19 @@ const CollectorTab: React.FC<CollectorTabProps> = ({
 
         if (oldIndex !== -1 && newIndex !== -1) {
             const updatedOrder = arrayMove(originalItems, oldIndex, newIndex);
-            
-            const updatedData = {
-                ...collectorData,
+          
+          const updatedData = {
+            ...collectorData,
                 [category]: updatedOrder,
-            };
-
-            setCollectorData(updatedData);
+          };
+          
+          setCollectorData(updatedData);
             toast.info("Item order updated");
         }
       }
     };
 
-    return (
+        return (
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={itemsToRender.map(item => item.itemId)} strategy={verticalListSortingStrategy}>
           {/* Grid-Layout anstelle von Tabelle - Maximal 2 Spalten */} 
@@ -1115,10 +1115,10 @@ const CollectorTab: React.FC<CollectorTabProps> = ({
                       <div className="flex-1 flex items-center gap-2 min-w-0"> {/* Geändert zu flex-row (Standard) und gap-2 */} 
                         {/* Checkbox (optional) */} 
                         {editMode && (
-                          <Checkbox
+                        <Checkbox 
                             className="flex-shrink-0" // Verhindert Schrumpfen
-                            checked={selectedItems.includes(item.itemId)}
-                            onCheckedChange={(checked) => {
+                          checked={selectedItems.includes(item.itemId)}
+                          onCheckedChange={(checked) => {
                               setSelectedItems(prev => 
                                 checked 
                                   ? [...prev, item.itemId]
@@ -1135,8 +1135,8 @@ const CollectorTab: React.FC<CollectorTabProps> = ({
                         {editMode ? (
                           <Input 
                             id={`prob-${item.itemId}`}
-                            type="number"
-                            value={item.probability}
+                          type="number"
+                          value={item.probability}
                             onChange={(e) => handleItemChange(originalIndex, 'probability', String(e.target.value), category)}
                             className="h-7 text-xs text-right bg-cyrus-dark-lighter border-cyrus-dark-lightest text-gray-300 w-20 flex-shrink-0" /* Breite angepasst */
                           />
@@ -1152,24 +1152,24 @@ const CollectorTab: React.FC<CollectorTabProps> = ({
                          {/* Actions Dropdown */} 
                          {editMode && (
                            <div className="flex-shrink-0"> {/* Div für korrekte Platzierung */} 
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="h-6 w-6">
                                   <MoreHorizontal className="h-4 w-4 text-gray-400" />
-                                </Button>
-                              </DropdownMenuTrigger>
+                              </Button>
+                            </DropdownMenuTrigger>
                               <DropdownMenuContent className="bg-cyrus-dark border-cyrus-dark-lightest text-gray-300">
                                 <DropdownMenuItem onClick={() => handleDuplicateItem(originalIndex, category)}>
-                                  <Copy className="mr-2 h-4 w-4" />
+                                <Copy className="mr-2 h-4 w-4" />
                                   Duplicate
-                                </DropdownMenuItem>
+                              </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleRemoveItem(originalIndex, category)} className="text-red-400">
                                   <Trash className="mr-2 h-4 w-4" />
                                   Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                           </div>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                           )}
                       </div>
                     </SortableGridItem>
